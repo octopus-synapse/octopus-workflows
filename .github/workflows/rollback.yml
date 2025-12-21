@@ -1,0 +1,51 @@
+name: Rollback - VM Deployment
+
+on:
+  workflow_call:
+    inputs:
+      image-tag:
+        required: true
+        type: string
+      service-port:
+        required: true
+        type: string
+      deploy-path:
+        required: true
+        type: string
+
+jobs:
+  rollback:
+    name: Rollback
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rollback on VM
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/key
+          chmod 600 ~/.ssh/key
+          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/key ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            cd ${{ inputs.deploy-path }}
+
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker pull ghcr.io/${{ github.repository }}:${{ inputs.image-tag }}
+
+            export IMAGE_TAG=${{ inputs.image-tag }}
+            docker-compose down
+            docker-compose up -d
+          EOF
+
+          rm -f ~/.ssh/key
+
+      - name: Health Check
+        run: |
+          sleep 15
+          for i in {1..10}; do
+            curl -f http://${{ secrets.VM_HOST }}:${{ inputs.service-port }}/api/health && exit 0
+            sleep 5
+          done
+          exit 1
