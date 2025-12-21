@@ -29,13 +29,15 @@ git push -u origin main
 2. Click **New environment**
 3. Name: `production`
 4. Click **Configure environment**
-5. Add secrets:
+5. Add **OCTOPUS** secrets (infrastructure secrets used by ALL projects):
 
 ```
-VM_SSH_PRIVATE_KEY = <your-ssh-private-key>
-VM_HOST = <your-vm-ip>
-VM_USER = <your-ssh-username>
+OCTOPUS_VM_SSH_PRIVATE_KEY = <your-ssh-private-key>
+OCTOPUS_VM_HOST = <your-vm-ip>
+OCTOPUS_VM_USER = <your-ssh-username>
 ```
+
+**Important:** Use the `OCTOPUS_` prefix! This differentiates infrastructure secrets from project-specific secrets.
 
 #### Generate SSH Key
 

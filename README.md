@@ -63,34 +63,74 @@ jobs:
       deploy-path: "/opt/my-service"
 ```
 
+## Secrets Architecture
+
+### Two-Tier Secret System
+
+**Tier 1: Octopus Secrets** (Infrastructure - configured once)
+- Stored in `octopus-workflows` repository environment: `production`
+- Prefix: `OCTOPUS_*`
+- Used by ALL projects automatically
+- Examples: `OCTOPUS_VM_HOST`, `OCTOPUS_VM_USER`, `OCTOPUS_VM_SSH_PRIVATE_KEY`
+
+**Tier 2: Project Secrets** (Application - per project)
+- Stored in each project repository
+- No prefix needed
+- Passed explicitly in workflows
+- Examples: `POSTGRES_PASSWORD`, `JWT_SECRET`, `NEXTAUTH_SECRET`
+
+### How It Works
+
+```yaml
+# In your project workflow
+jobs:
+  deploy:
+    uses: your-org/octopus-workflows/.github/workflows/cd.yml@main
+    secrets:
+      # Octopus secrets (OCTOPUS_VM_*) inherited automatically ✅
+      # Only pass project-specific secrets below
+      ENV_VARS: |
+        DATABASE_URL=${{ secrets.DATABASE_URL }}
+        JWT_SECRET=${{ secrets.JWT_SECRET }}
+```
+
+The octopus workflow runs in the `production` environment, which has access to `OCTOPUS_*` secrets.
+Your project only needs to provide application-specific secrets via `ENV_VARS`.
+
 ## Setup
 
-### 1. Configure GitHub Environment
+### 1. Configure Octopus Environment (Once)
 
 In `octopus-workflows` repository:
 
 1. Go to **Settings → Environments**
 2. Create environment: `production`
-3. Add secrets:
-   - `VM_SSH_PRIVATE_KEY` - SSH private key
-   - `VM_HOST` - VM hostname or IP
-   - `VM_USER` - SSH username
+3. Add infrastructure secrets (with `OCTOPUS_` prefix):
+   - `OCTOPUS_VM_SSH_PRIVATE_KEY` - SSH private key for deployment
+   - `OCTOPUS_VM_HOST` - VM hostname or IP address
+   - `OCTOPUS_VM_USER` - SSH username for VM access
 
-### 2. Configure Project Secrets
+### 2. Configure Project Secrets (Per Project)
 
-In your project repository, add only project-specific secrets:
+In your project repository, add only application-specific secrets:
 
 ```
 # Backend example
 POSTGRES_USER
 POSTGRES_PASSWORD
+POSTGRES_DB
+REDIS_PASSWORD
 JWT_SECRET
 SENDGRID_API_KEY
 
 # Frontend example
 NEXT_PUBLIC_API_URL
+NEXTAUTH_URL
 NEXTAUTH_SECRET
 ```
+
+**Note:** NO need to configure `VM_HOST`, `VM_USER`, or `VM_SSH_PRIVATE_KEY` in project repositories!
+These are inherited from octopus automatically.
 
 ## Workflows
 

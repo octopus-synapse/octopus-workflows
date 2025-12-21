@@ -37,11 +37,11 @@ jobs:
       - name: Deploy to VM
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/key
+          echo "${{ secrets.OCTOPUS_VM_SSH_PRIVATE_KEY }}" > ~/.ssh/key
           chmod 600 ~/.ssh/key
-          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.OCTOPUS_VM_HOST }} >> ~/.ssh/known_hosts
 
-          ssh -i ~/.ssh/key ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+          ssh -i ~/.ssh/key ${{ secrets.OCTOPUS_VM_USER }}@${{ secrets.OCTOPUS_VM_HOST }} << 'EOF'
             cd ${{ inputs.deploy-path }}
 
             # Criar .env
@@ -65,7 +65,7 @@ jobs:
         run: |
           sleep 15
           for i in {1..10}; do
-            curl -f http://${{ secrets.VM_HOST }}:${{ inputs.service-port }}/api/health && exit 0
+            curl -f http://${{ secrets.OCTOPUS_VM_HOST }}:${{ inputs.service-port }}/api/health && exit 0
             sleep 5
           done
           exit 1
