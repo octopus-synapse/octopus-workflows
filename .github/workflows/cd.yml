@@ -18,6 +18,12 @@ on:
         required: true
       ENV_VARS:
         required: true
+      OCTOPUS_VM_SSH_PRIVATE_KEY:
+        required: true
+      OCTOPUS_VM_HOST:
+        required: true
+      OCTOPUS_VM_USER:
+        required: true
 
 jobs:
   deploy:
