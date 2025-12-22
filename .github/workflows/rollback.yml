@@ -12,6 +12,13 @@ on:
       deploy-path:
         required: true
         type: string
+    secrets:
+      OCTOPUS_SSH_PRIVATE_KEY:
+        required: true
+      OCTOPUS_VM_HOST:
+        required: true
+      OCTOPUS_VM_USER:
+        required: true
 
 jobs:
   rollback:
@@ -24,7 +31,7 @@ jobs:
       - name: Rollback on VM
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.OCTOPUS_VM_SSH_PRIVATE_KEY }}" > ~/.ssh/key
+          echo "${{ secrets.OCTOPUS_SSH_PRIVATE_KEY }}" > ~/.ssh/key
           chmod 600 ~/.ssh/key
           ssh-keyscan -H ${{ secrets.OCTOPUS_VM_HOST }} >> ~/.ssh/known_hosts
 
