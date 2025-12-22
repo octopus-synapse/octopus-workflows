@@ -18,7 +18,7 @@ on:
         required: true
       ENV_VARS:
         required: true
-      OCTOPUS_VM_SSH_PRIVATE_KEY:
+      OCTOPUS_SSH_PRIVATE_KEY:
         required: true
       OCTOPUS_VM_HOST:
         required: true
@@ -42,7 +42,7 @@ jobs:
       - name: Deploy to VM
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.OCTOPUS_VM_SSH_PRIVATE_KEY }}" > ~/.ssh/key
+          echo "${{ secrets.OCTOPUS_SSH_PRIVATE_KEY }}" > ~/.ssh/key
           chmod 600 ~/.ssh/key
           ssh-keyscan -H ${{ secrets.OCTOPUS_VM_HOST }} >> ~/.ssh/known_hosts
 
