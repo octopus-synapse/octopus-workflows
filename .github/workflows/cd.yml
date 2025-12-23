@@ -23,6 +23,9 @@ on:
         required: true
       ENV_VARS:
         required: true
+      BUILD_ARGS:
+        required: false
+        description: "Docker build arguments with secrets (one per line, KEY=VALUE format)"
       OCTOPUS_SSH_PRIVATE_KEY:
         required: true
       OCTOPUS_VM_HOST:
@@ -44,10 +47,19 @@ jobs:
 
           # Build with optional build args
           BUILD_ARGS=""
+
+          # Add build args from inputs (non-secret)
           if [ -n "${{ inputs.build-args }}" ]; then
             while IFS= read -r arg; do
               [ -n "$arg" ] && BUILD_ARGS="$BUILD_ARGS --build-arg $arg"
             done <<< "${{ inputs.build-args }}"
+          fi
+
+          # Add build args from secrets
+          if [ -n "${{ secrets.BUILD_ARGS }}" ]; then
+            while IFS= read -r arg; do
+              [ -n "$arg" ] && BUILD_ARGS="$BUILD_ARGS --build-arg $arg"
+            done <<< "${{ secrets.BUILD_ARGS }}"
           fi
 
           docker build $BUILD_ARGS -t ghcr.io/${{ github.repository }}:latest .
