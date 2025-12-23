@@ -13,6 +13,11 @@ on:
         required: false
         type: boolean
         default: false
+      build-args:
+        required: false
+        type: string
+        default: ""
+        description: "Docker build arguments (one per line, KEY=VALUE format)"
     secrets:
       SERVICE_PORT:
         required: true
@@ -36,7 +41,16 @@ jobs:
       - name: Build & Push Image
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          docker build -t ghcr.io/${{ github.repository }}:latest .
+
+          # Build with optional build args
+          BUILD_ARGS=""
+          if [ -n "${{ inputs.build-args }}" ]; then
+            while IFS= read -r arg; do
+              [ -n "$arg" ] && BUILD_ARGS="$BUILD_ARGS --build-arg $arg"
+            done <<< "${{ inputs.build-args }}"
+          fi
+
+          docker build $BUILD_ARGS -t ghcr.io/${{ github.repository }}:latest .
           docker push ghcr.io/${{ github.repository }}:latest
 
       - name: Deploy to VM
