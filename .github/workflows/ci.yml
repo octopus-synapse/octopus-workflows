@@ -15,6 +15,11 @@ on:
         required: false
         type: boolean
         default: false
+      has-smoke-tests:
+        required: false
+        type: boolean
+        default: false
+        description: "Run smoke tests (requires test:smoke script in package.json)"
       build-output-dir:
         required: false
         type: string
@@ -71,10 +76,50 @@ jobs:
           JWT_SECRET: test-secret
           NODE_ENV: test
 
+  smoke-test:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: ${{ inputs.has-smoke-tests }}
+    services:
+      postgres:
+        image: ${{ inputs.has-database && 'postgres:16-alpine' || '' }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: ${{ inputs.has-redis && 'redis:7-alpine' || '' }}
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: "npm"
+      - run: npm ci
+      - if: ${{ inputs.has-database }}
+        run: npx prisma generate && npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+      - run: npm run test:smoke
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          JWT_SECRET: test-secret
+          NODE_ENV: test
+
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [quality, test]
+    needs: [quality, test, smoke-test]
+    if: ${{ always() && needs.quality.result == 'success' && needs.test.result == 'success' && (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

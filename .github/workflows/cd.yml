@@ -18,6 +18,11 @@ on:
         type: string
         default: ""
         description: "Docker build arguments (one per line, KEY=VALUE format)"
+      required-env-vars:
+        required: false
+        type: string
+        default: ""
+        description: "Comma-separated list of required env var names (e.g., DATABASE_URL,JWT_SECRET)"
     secrets:
       SERVICE_PORT:
         required: true
@@ -40,6 +45,36 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate Environment Variables
+        if: ${{ inputs.required-env-vars != '' }}
+        env:
+          REQUIRED_VARS: ${{ inputs.required-env-vars }}
+          ENV_CONTENT: ${{ secrets.ENV_VARS }}
+        run: |
+          echo "🔍 Validating required environment variables..."
+          MISSING=""
+
+          IFS=',' read -ra VARS <<< "$REQUIRED_VARS"
+          for var in "${VARS[@]}"; do
+            var=$(echo "$var" | xargs)  # trim whitespace
+            if [ -z "$var" ]; then continue; fi
+            if ! echo "$ENV_CONTENT" | grep -q "^${var}="; then
+              MISSING="$MISSING $var"
+            fi
+          done
+
+          if [ -n "$MISSING" ]; then
+            echo ""
+            echo "❌ CRITICAL: Missing required environment variables:$MISSING"
+            echo ""
+            echo "💡 Add these to your GitHub Secrets (ENV_VARS) in format:"
+            echo "   VAR_NAME=value"
+            echo ""
+            exit 1
+          fi
+
+          echo "✅ All required environment variables present"
 
       - name: Build & Push Image
         run: |
