@@ -40,7 +40,10 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           cache: "npm"
+          registry-url: https://npm.pkg.github.com
       - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run lint
       - run: npm run typecheck
 
@@ -68,7 +71,10 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           cache: "npm"
+          registry-url: https://npm.pkg.github.com
       - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - if: ${{ inputs.has-database && inputs.pre-test-script == '' }}
         run: npx prisma generate && npx prisma migrate deploy
         env:
@@ -115,7 +121,10 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           cache: "npm"
+          registry-url: https://npm.pkg.github.com
       - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - if: ${{ inputs.has-database && inputs.pre-test-script == '' }}
         run: npx prisma generate && npx prisma migrate deploy
         env:
@@ -147,7 +156,10 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           cache: "npm"
+          registry-url: https://npm.pkg.github.com
       - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - if: ${{ inputs.has-database }}
         run: npx prisma generate
       - run: npm run build
