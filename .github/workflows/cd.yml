@@ -127,11 +127,14 @@ jobs:
             # Login e deploy
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker pull ghcr.io/${{ github.repository }}:latest
-            docker-compose down || true
-            docker-compose up -d
+            
+            # Migrations (Strategy: Migrate then Deploy)
+            # We use docker-compose run to execute migrations with the NEW image before updating the service
+            ${{ inputs.has-database && 'docker-compose run --rm backend npx prisma migrate deploy' || 'echo "Skipping migrations"' }}
 
-            # Migrations se necessário
-            ${{ inputs.has-database && 'sleep 5 && docker-compose exec -T $(docker-compose ps --services | head -n 1) npx prisma migrate deploy' || 'echo "Skipping migrations"' }}
+            # Rolling update (recreates only changed containers)
+            docker-compose up -d --remove-orphans
+
           EOF
 
           rm -f ~/.ssh/key
