@@ -100,11 +100,13 @@ jobs:
             done <<< "${{ secrets.BUILD_ARGS }}"
           fi
 
-          # Build with GITHUB_TOKEN as secret instead of arg
-          docker build \
+          # Build with NODE_AUTH_TOKEN as BuildKit secret (file-based)
+          echo "${{ secrets.NODE_AUTH_TOKEN }}" > .github_token
+          DOCKER_BUILDKIT=1 docker build \
             $BUILD_ARGS \
-            --secret github_token=${{ secrets.NODE_AUTH_TOKEN }} \
+            --secret id=github_token,src=.github_token \
             -t ghcr.io/${{ github.repository }}:latest .
+          rm -f .github_token
           docker push ghcr.io/${{ github.repository }}:latest
 
       - name: Deploy to VM
