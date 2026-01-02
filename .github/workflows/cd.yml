@@ -24,6 +24,8 @@ on:
         default: ""
         description: "Comma-separated list of required env var names (e.g., DATABASE_URL,JWT_SECRET)"
     secrets:
+      NODE_AUTH_TOKEN:
+        required: true
       SERVICE_PORT:
         required: true
       ENV_VARS:
