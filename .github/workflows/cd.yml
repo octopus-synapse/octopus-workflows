@@ -100,7 +100,11 @@ jobs:
             done <<< "${{ secrets.BUILD_ARGS }}"
           fi
 
-          docker build $BUILD_ARGS -t ghcr.io/${{ github.repository }}:latest .
+          # Build with GITHUB_TOKEN as secret instead of arg
+          docker build \
+            $BUILD_ARGS \
+            --secret github_token=${{ secrets.NODE_AUTH_TOKEN }} \
+            -t ghcr.io/${{ github.repository }}:latest .
           docker push ghcr.io/${{ github.repository }}:latest
 
       - name: Deploy to VM
