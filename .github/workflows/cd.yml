@@ -49,6 +49,7 @@ jobs:
       - name: Validate Environment Variables
         if: ${{ inputs.required-env-vars != '' }}
         env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQUIRED_VARS: ${{ inputs.required-env-vars }}
           ENV_CONTENT: ${{ secrets.ENV_VARS }}
         run: |
