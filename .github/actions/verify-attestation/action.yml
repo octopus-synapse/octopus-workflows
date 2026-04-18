@@ -15,31 +15,18 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Setup Bun
-      uses: oven-sh/setup-bun@v2
+    - name: Setup Node
+      uses: actions/setup-node@v4
       with:
-        bun-version: '1.3.11'
+        node-version: '20'
+        registry-url: 'https://npm.pkg.github.com'
+        scope: '@octopus-synapse'
 
-    - name: Configure GitHub Packages auth
+    - name: Install @octopus-synapse/precommit globally (npm)
       shell: bash
       env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        # bun only honors scoped registries via bunfig.toml in the current
-        # working dir or $HOME. Write both so global and local installs see it.
-        cat > "$HOME/.bunfig.toml" <<EOF
-        [install.scopes]
-        "@octopus-synapse" = { token = "${GH_TOKEN}", url = "https://npm.pkg.github.com/" }
-        EOF
-        # Also drop ~/.npmrc for any tooling (e.g. npm fallback) that reads it.
-        {
-          echo "@octopus-synapse:registry=https://npm.pkg.github.com"
-          echo "//npm.pkg.github.com/:_authToken=${GH_TOKEN}"
-        } > "$HOME/.npmrc"
-
-    - name: Install @octopus-synapse/precommit globally
-      shell: bash
-      run: bun add --global @octopus-synapse/precommit
+        NODE_AUTH_TOKEN: ${{ github.token }}
+      run: npm install -g @octopus-synapse/precommit
 
     - name: Verify attestation
       shell: bash
