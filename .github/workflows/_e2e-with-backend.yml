@@ -90,6 +90,9 @@ jobs:
       JWT_SECRET: e2e-ci-secret-at-least-32-characters-long-xxx
       SKIP_EMAIL_VERIFICATION: 'true'
       LIBRETRANSLATE_URL: http://localhost:5000
+      # Exposed to bun install so bunfig.toml can resolve @octopus-synapse/*
+      # scoped devDeps from GitHub Packages (needs packages:read permission).
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
