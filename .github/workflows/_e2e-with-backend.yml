@@ -108,6 +108,7 @@ jobs:
         working-directory: _backend
         run: |
           bun install --frozen-lockfile
+          bunx prisma generate
           bunx prisma migrate deploy --config prisma.config.ts || bunx prisma migrate deploy
       - name: Start backend (background)
         working-directory: _backend
