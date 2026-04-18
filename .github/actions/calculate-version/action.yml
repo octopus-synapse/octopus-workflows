@@ -1,0 +1,33 @@
+name: 'Calculate Version'
+description: 'Calculates next version based on release type'
+inputs:
+  current_version:
+    description: 'Current semver version (e.g., 1.2.3 or v1.2.3)'
+    required: true
+  release_type:
+    description: 'Release type (major, minor, patch)'
+    required: true
+  with_prefix:
+    description: 'Output with v prefix'
+    required: false
+    default: 'false'
+outputs:
+  next_version:
+    description: 'Calculated next version'
+    value: ${{ steps.calc.outputs.next_version }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Calculate next version
+      id: calc
+      shell: bash
+      run: |
+        PREFIX_FLAG=""
+        if [ "${{ inputs.with_prefix }}" == "true" ]; then
+          PREFIX_FLAG="--with-prefix"
+        fi
+
+        NEXT=$(bun src/release/cli/calc-version.ts "${{ inputs.current_version }}" "${{ inputs.release_type }}" $PREFIX_FLAG)
+
+        echo "next_version=$NEXT" >> $GITHUB_OUTPUT
+        echo "📦 Version: ${{ inputs.current_version }} → $NEXT (${{ inputs.release_type }})"

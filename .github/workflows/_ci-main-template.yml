@@ -1,0 +1,99 @@
+name: _ci-main-template
+
+# Reusable CI orchestrator. Consumer repos call this via `uses:` and opt-in
+# to the test tiers they need via the boolean inputs. Defaults mirror the
+# profile-services profile (unit + arch + contract + verify-attestation).
+
+on:
+  workflow_call:
+    inputs:
+      # Which tiers to run (false = skipped entirely).
+      run-verify-attestation:
+        type: boolean
+        default: true
+      run-build:
+        type: boolean
+        default: true
+      run-unit:
+        type: boolean
+        default: false
+      run-arch:
+        type: boolean
+        default: false
+      run-contract:
+        type: boolean
+        default: false
+      run-integration:
+        type: boolean
+        default: false
+      run-e2e:
+        type: boolean
+        default: false
+      run-security:
+        type: boolean
+        default: false
+
+      # Paths that should trigger a rebuild. Comma-separated glob list.
+      change-paths:
+        type: string
+        default: 'src/**,test/**,package.json,bun.lock,bun.lockb'
+
+      # Build delegate workflow inside the consumer repo (e.g., .github/workflows/ci.build.yml).
+      build-workflow:
+        type: string
+        default: 'ci.build.yml'
+      e2e-workflow:
+        type: string
+        default: 'ci.infrastructure.e2e.yml'
+      integration-workflow:
+        type: string
+        default: 'ci.infrastructure.integration.yml'
+      security-workflow:
+        type: string
+        default: 'ci.static-analysis.security.yml'
+      unit-workflow:
+        type: string
+        default: 'ci.static-analysis.unit.yml'
+      arch-workflow:
+        type: string
+        default: 'ci.static-analysis.arch.yml'
+      contract-workflow:
+        type: string
+        default: 'ci.static-analysis.contract.yml'
+
+jobs:
+  skip-duplicates:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip.outputs.should_skip }}
+    steps:
+      - id: skip
+        uses: fkirc/skip-duplicate-actions@v5
+        with:
+          concurrent_skipping: 'same_content_newer'
+          skip_after_successful_duplicate: 'true'
+
+  verify-attestation:
+    needs: skip-duplicates
+    if: ${{ needs.skip-duplicates.outputs.should_skip != 'true' && inputs.run-verify-attestation }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: octopus-synapse/octopus-workflows/.github/actions/verify-attestation@v1
+
+  # The actual build/test jobs are delegated back to the consumer repo's own
+  # concrete workflows. The consumer declares the delegates once (e.g. ci.build.yml
+  # that in turn calls _static-analysis-template.yml here) and this orchestrator
+  # only decides which to run.
+  #
+  # We expose `needs` fan-in via a final status job so a PR's required checks
+  # stay stable regardless of which tiers are active.
+
+  status:
+    needs: [verify-attestation]
+    if: ${{ always() && needs.skip-duplicates.outputs.should_skip != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: octopus-synapse/octopus-workflows/.github/actions/evaluate-ci-results@v1
+        with:
+          attestation-result: ${{ needs.verify-attestation.result }}

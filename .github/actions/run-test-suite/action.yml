@@ -1,0 +1,88 @@
+name: 'Run Test Suite'
+description: 'Unified action for running test suites with optional DB/Redis setup'
+
+inputs:
+  test-command:
+    description: 'Command to run tests'
+    required: true
+  test-name:
+    description: 'Test name for summary'
+    required: true
+  artifact-name:
+    description: 'Artifact name for results'
+    required: false
+    default: 'test-results'
+  needs-db:
+    description: 'Whether tests need database setup'
+    required: false
+    default: 'false'
+
+outputs:
+  status:
+    description: 'Test status (success/failure)'
+    value: ${{ steps.test.outputs.status }}
+  duration:
+    description: 'Test duration'
+    value: ${{ steps.test.outputs.duration }}
+  pass:
+    description: 'Number of tests passed'
+    value: ${{ steps.test.outputs.pass }}
+  fail:
+    description: 'Number of tests failed'
+    value: ${{ steps.test.outputs.fail }}
+  skip:
+    description: 'Number of tests skipped'
+    value: ${{ steps.test.outputs.skip }}
+  files:
+    description: 'Number of test files'
+    value: ${{ steps.test.outputs.files }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Environment
+      uses: ./.github/actions/setup-bun-env
+      with:
+        with-prisma: ${{ inputs.needs-db }}
+
+    - name: Setup DB
+      if: inputs.needs-db == 'true'
+      shell: bash
+      run: bun run db:setup:test
+
+    - name: Run Tests
+      id: test
+      shell: bash
+      run: |
+        START=$(date +%s)
+
+        # Run tests, allowing non-zero exit for parsing
+        ${{ inputs.test-command }} 2>&1 | tee test-output.txt || true
+        EXIT_CODE=${PIPESTATUS[0]}
+
+        DURATION=$(($(date +%s) - START))
+        echo "duration=${DURATION}s" >> $GITHUB_OUTPUT
+
+        # Parse using shared script
+        source .github/scripts/parse-test-output.sh test-output.txt
+
+        echo "pass=${PASS:-0}" >> $GITHUB_OUTPUT
+        echo "fail=${FAIL:-0}" >> $GITHUB_OUTPUT
+        echo "skip=${SKIP:-0}" >> $GITHUB_OUTPUT
+        echo "files=${FILES:-?}" >> $GITHUB_OUTPUT
+
+        # Determine status
+        if [[ "${FAIL:-0}" != "0" ]] || [[ $EXIT_CODE -ne 0 ]]; then
+          echo "status=failure" >> $GITHUB_OUTPUT
+          exit 1
+        else
+          echo "status=success" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}-${{ github.run_number }}
+        path: test-output.txt
+        retention-days: 7

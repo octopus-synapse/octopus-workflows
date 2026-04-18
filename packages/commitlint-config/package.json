@@ -1,0 +1,26 @@
+{
+  "name": "@octopus-synapse/commitlint-config",
+  "version": "1.0.0",
+  "description": "Canonical commitlint config for Octopus Synapse repos.",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/octopus-synapse/octopus-workflows.git",
+    "directory": "packages/commitlint-config"
+  },
+  "files": [
+    "index.ts",
+    "README.md"
+  ],
+  "dependencies": {
+    "@commitlint/config-conventional": "^19",
+    "@commitlint/types": "^19"
+  }
+}

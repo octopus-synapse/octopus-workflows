@@ -1,0 +1,86 @@
+name: _infrastructure-test-template
+
+on:
+  workflow_call:
+    inputs:
+      test-command:
+        description: "Command to run tests"
+        required: true
+        type: string
+      test-name:
+        description: "Test name for summary"
+        required: true
+        type: string
+      db-name:
+        description: "Database name"
+        required: false
+        type: string
+        default: "test_db"
+      timeout:
+        description: "Timeout in minutes"
+        required: false
+        type: number
+        default: 15
+
+env:
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5433/${{ inputs.db-name }}
+  REDIS_HOST: localhost
+  REDIS_PORT: 6380
+  NODE_ENV: test
+  JWT_SECRET: test-secret-key-for-ci-tests-minimum-32-chars
+  RATE_LIMIT_ENABLED: true
+
+jobs:
+  test:
+    name: ${{ inputs.test-name }} Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout }}
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ${{ inputs.db-name }}
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        id: tests
+        uses: ./.github/actions/run-test-suite
+        with:
+          test-command: ${{ inputs.test-command }}
+          test-name: ${{ inputs.test-name }}
+          artifact-name: ${{ inputs.test-name }}-results
+          needs-db: 'true'
+
+      - name: Summary
+        if: always()
+        run: |
+          .github/scripts/generate-summary.sh \
+            "${{ steps.tests.outputs.status || 'failure' }}" \
+            "${{ inputs.test-name }} Tests" \
+            "${{ steps.tests.outputs.pass || '0' }}" \
+            "${{ steps.tests.outputs.fail || '0' }}" \
+            "${{ steps.tests.outputs.skip || '0' }}" \
+            "${{ steps.tests.outputs.duration || '0' }}" \
+            test-output.txt

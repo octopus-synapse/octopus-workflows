@@ -1,0 +1,20 @@
+{
+  "name": "@octopus-synapse/biome-config",
+  "version": "1.0.0",
+  "description": "Canonical Biome config for Octopus Synapse repos. Extend via biome.json.",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/octopus-synapse/octopus-workflows.git",
+    "directory": "packages/biome-config"
+  },
+  "files": [
+    "biome.json",
+    "README.md"
+  ],
+  "exports": {
+    "./biome.json": "./biome.json"
+  }
+}

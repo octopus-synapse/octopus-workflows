@@ -1,0 +1,40 @@
+name: 'Generate Changelog'
+description: 'Generates hierarchical changelog from PRs and tags'
+inputs:
+  release_type:
+    description: 'Release type (major, minor, patch)'
+    required: true
+  next_version:
+    description: 'Next version string (e.g., v1.2.3)'
+    required: true
+  repository:
+    description: 'Repository in owner/repo format'
+    required: true
+  changelog_input_file:
+    description: 'Path to JSON input file'
+    required: true
+  output_file:
+    description: 'Path to output changelog file'
+    required: false
+    default: '/tmp/changelog.md'
+outputs:
+  changelog_file:
+    description: 'Path to generated changelog file'
+    value: ${{ inputs.output_file }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Generate changelog
+      id: generate
+      shell: bash
+      run: |
+        # Generate header
+        cat > "${{ inputs.output_file }}" << EOF
+        ## Release ${{ inputs.next_version }}
+
+        EOF
+
+        # Generate body using TypeScript CLI
+        cat "${{ inputs.changelog_input_file }}" | bun src/release/cli/gen-changelog.ts >> "${{ inputs.output_file }}"
+
+        echo "✅ Changelog generated at ${{ inputs.output_file }}"

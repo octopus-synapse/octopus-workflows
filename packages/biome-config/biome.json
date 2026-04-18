@@ -1,0 +1,93 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true,
+    "defaultBranch": "main"
+  },
+  "files": {
+    "ignoreUnknown": false,
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/build",
+      "!**/.next",
+      "!**/.svelte-kit",
+      "!**/coverage",
+      "!**/*.generated.ts",
+      "!**/generated/**"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "complexity": {
+        "noExcessiveCognitiveComplexity": "off",
+        "noForEach": "off",
+        "noUselessConstructor": "off"
+      },
+      "style": {
+        "noParameterAssign": "off",
+        "useImportType": "off",
+        "useNodejsImportProtocol": "warn",
+        "noNonNullAssertion": "warn"
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noArrayIndexKey": "off",
+        "noAssignInExpressions": "warn",
+        "useIterableCallbackReturn": "warn",
+        "noImplicitAnyLet": "warn",
+        "noConfusingVoidType": "error",
+        "noDoubleEquals": "error"
+      },
+      "correctness": {
+        "noUnusedVariables": "error",
+        "noUnusedPrivateClassMembers": "off",
+        "noUnusedFunctionParameters": "warn",
+        "noUnusedImports": "error",
+        "useExhaustiveDependencies": "warn"
+      }
+    }
+  },
+  "javascript": {
+    "parser": {
+      "unsafeParameterDecoratorsEnabled": true
+    },
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "always",
+      "trailingCommas": "all",
+      "arrowParentheses": "always"
+    }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "**/*.spec.ts",
+        "**/*.test.ts",
+        "**/*.e2e-spec.ts",
+        "**/__mocks__/**",
+        "test/**",
+        "tests/**"
+      ],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedVariables": "warn"
+          }
+        }
+      }
+    }
+  ],
+  "assist": { "actions": { "source": { "organizeImports": "on" } } }
+}

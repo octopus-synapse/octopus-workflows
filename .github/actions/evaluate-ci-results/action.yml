@@ -1,0 +1,72 @@
+name: 'Evaluate CI Results'
+description: 'Aggregate job results and generate CI summary'
+
+inputs:
+  attestation:
+    description: 'Pre-commit attestation job result'
+    required: true
+  build:
+    description: 'Docker build job result'
+    required: true
+  integration:
+    description: 'Integration test job result'
+    required: true
+  e2e:
+    description: 'E2E test job result'
+    required: true
+  security:
+    description: 'Security scan job result'
+    required: true
+
+outputs:
+  success:
+    description: 'Whether CI passed overall'
+    value: ${{ steps.check.outputs.success }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Evaluate Results
+      id: check
+      shell: bash
+      run: |
+        status_emoji() {
+          case "$1" in
+            success) echo "✅" ;;
+            failure) echo "❌" ;;
+            skipped) echo "⏭️" ;;
+            *)       echo "⚪" ;;
+          esac
+        }
+
+        echo "## 📊 CI Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|:------|:------:|" >> $GITHUB_STEP_SUMMARY
+        echo "| Pre-commit | $(status_emoji ${{ inputs.attestation }}) |" >> $GITHUB_STEP_SUMMARY
+        echo "| Build | $(status_emoji ${{ inputs.build }}) |" >> $GITHUB_STEP_SUMMARY
+        echo "| Integration | $(status_emoji ${{ inputs.integration }}) |" >> $GITHUB_STEP_SUMMARY
+        echo "| E2E | $(status_emoji ${{ inputs.e2e }}) |" >> $GITHUB_STEP_SUMMARY
+        echo "| Security | $(status_emoji ${{ inputs.security }}) |" >> $GITHUB_STEP_SUMMARY
+
+        FAILED=false
+        for result in "${{ inputs.attestation }}" "${{ inputs.build }}" "${{ inputs.integration }}" "${{ inputs.e2e }}" "${{ inputs.security }}"; do
+          if [[ "$result" == "failure" ]]; then
+            FAILED=true
+            break
+          fi
+        done
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [[ "$FAILED" == "true" ]]; then
+          echo "### ❌ CI Failed" >> $GITHUB_STEP_SUMMARY
+          echo "success=false" >> $GITHUB_OUTPUT
+        else
+          echo "### ✅ CI Passed" >> $GITHUB_STEP_SUMMARY
+          echo "success=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Exit with status
+      if: steps.check.outputs.success != 'true'
+      shell: bash
+      run: exit 1

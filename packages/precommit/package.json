@@ -1,0 +1,29 @@
+{
+  "name": "@octopus-synapse/precommit",
+  "version": "1.0.0",
+  "description": "Shared pre-commit runner + attestation system for Octopus Synapse repos.",
+  "type": "module",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/octopus-synapse/octopus-workflows.git",
+    "directory": "packages/precommit"
+  },
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "octopus-attest": "./dist/bin/attest.js",
+    "octopus-run-parallel": "./dist/bin/run-parallel.js"
+  },
+  "scripts": {
+    "build": "bun build ./bin/attest.ts ./bin/run-parallel.ts --outdir ./dist/bin --target node",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5"
+  }
+}

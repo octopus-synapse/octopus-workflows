@@ -1,0 +1,30 @@
+name: 'Detect Release Type'
+description: 'Detects release type from PR labels'
+inputs:
+  labels:
+    description: 'Comma-separated list of PR labels'
+    required: true
+outputs:
+  release_type:
+    description: 'Detected release type (major, minor, patch, or empty)'
+    value: ${{ steps.detect.outputs.release_type }}
+  should_release:
+    description: 'Whether a release should be created'
+    value: ${{ steps.detect.outputs.should_release }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Detect release type
+      id: detect
+      shell: bash
+      run: |
+        RELEASE_TYPE=$(bun src/release/cli/detect-release.ts --labels="${{ inputs.labels }}")
+        echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
+
+        if [ -n "$RELEASE_TYPE" ]; then
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "🚀 Detected release type: $RELEASE_TYPE"
+        else
+          echo "should_release=false" >> $GITHUB_OUTPUT
+          echo "ℹ️ No release label found"
+        fi

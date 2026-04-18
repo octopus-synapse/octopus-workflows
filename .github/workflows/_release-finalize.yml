@@ -1,0 +1,91 @@
+name: _release-finalize
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: 'Commit SHA to create release for'
+        required: true
+        type: string
+    outputs:
+      released:
+        description: 'Whether release was created'
+        value: ${{ jobs.finalize.outputs.released }}
+      version:
+        description: 'Release version (without v prefix)'
+        value: ${{ jobs.finalize.outputs.version }}
+      tag:
+        description: 'Release tag (with v prefix)'
+        value: ${{ jobs.finalize.outputs.tag }}
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.commit_sha }}
+
+      - uses: ./.github/actions/setup-git-bot
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="v$(jq -r '.version' package.json)"
+          echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create tag
+        id: tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_BODY=$(gh api graphql -f query='
+            query($sha: String!, $owner: String!, $repo: String!) {
+              repository(owner: $owner, name: $repo) {
+                commit: object(expression: $sha) {
+                  ... on Commit {
+                    associatedPullRequests(first: 1) {
+                      nodes { body }
+                    }
+                  }
+                }
+              }
+            }
+          ' -f sha="${{ inputs.commit_sha }}" \
+            -f owner="${{ github.repository_owner }}" \
+            -f repo="${{ github.event.repository.name }}" \
+            --jq '.data.repository.commit.associatedPullRequests.nodes[0].body // ""' 2>/dev/null || echo "")
+
+          echo "$PR_BODY" | sed '/^> ⚠️/d' | sed '/^---$/,/^---$/d' > /tmp/release-notes.md
+
+      - name: Create release
+        id: release
+        if: steps.tag.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --title "Release $TAG" \
+            --notes-file /tmp/release-notes.md \
+            --target main
+          echo "released=true" >> $GITHUB_OUTPUT

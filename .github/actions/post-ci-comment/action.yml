@@ -1,0 +1,81 @@
+name: 'Post CI Summary Comment'
+description: |
+  Posts (or updates) a markdown comment on the PR summarizing CI checks:
+  status table per check, link to the workflow run, and optional bundle/
+  coverage deltas. No SVG — plain GitHub-flavored markdown only.
+inputs:
+  github-token:
+    description: 'Token with pull-request write permission.'
+    required: true
+  pr-number:
+    description: 'Pull request number to comment on.'
+    required: true
+  checks-json:
+    description: |
+      JSON array of check results, e.g. [{"name":"build","status":"ok","duration_s":"42"}]
+    required: true
+  coverage-delta:
+    description: 'Optional coverage delta, e.g. "+0.3%".'
+    required: false
+    default: ''
+  bundle-delta:
+    description: 'Optional bundle-size delta, e.g. "+12KB (+2.1%)".'
+    required: false
+    default: ''
+  marker:
+    description: 'Hidden marker string used to find/update the existing comment.'
+    required: false
+    default: '<!-- octopus-ci-summary -->'
+runs:
+  using: 'composite'
+  steps:
+    - name: Build comment body
+      id: body
+      shell: bash
+      env:
+        CHECKS_JSON: ${{ inputs.checks-json }}
+        COVERAGE_DELTA: ${{ inputs.coverage-delta }}
+        BUNDLE_DELTA: ${{ inputs.bundle-delta }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        MARKER: ${{ inputs.marker }}
+      run: |
+        {
+          echo "$MARKER"
+          echo "## CI Summary"
+          echo ""
+          echo "| Check | Status | Duration |"
+          echo "|---|---|---|"
+          echo "$CHECKS_JSON" | jq -r '.[] | "| \(.name) | \(if .status=="ok" then "✅" else "❌" end) | \(.duration_s)s |"'
+          echo ""
+          if [ -n "$COVERAGE_DELTA" ] || [ -n "$BUNDLE_DELTA" ]; then
+            echo "### Deltas"
+            [ -n "$COVERAGE_DELTA" ] && echo "- Coverage: \`$COVERAGE_DELTA\`"
+            [ -n "$BUNDLE_DELTA" ] && echo "- Bundle size: \`$BUNDLE_DELTA\`"
+            echo ""
+          fi
+          echo "[→ full workflow run]($RUN_URL)"
+        } > /tmp/ci-comment.md
+
+        {
+          echo 'body<<EOF'
+          cat /tmp/ci-comment.md
+          echo EOF
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Find existing comment
+      id: find
+      uses: peter-evans/find-comment@v3
+      with:
+        issue-number: ${{ inputs.pr-number }}
+        comment-author: 'github-actions[bot]'
+        body-includes: ${{ inputs.marker }}
+        token: ${{ inputs.github-token }}
+
+    - name: Create or update PR comment
+      uses: peter-evans/create-or-update-comment@v4
+      with:
+        issue-number: ${{ inputs.pr-number }}
+        comment-id: ${{ steps.find.outputs.comment-id }}
+        edit-mode: replace
+        body: ${{ steps.body.outputs.body }}
+        token: ${{ inputs.github-token }}
