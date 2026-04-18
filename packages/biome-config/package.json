@@ -1,6 +1,6 @@
 {
   "name": "@octopus-synapse/biome-config",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Canonical Biome config for Octopus Synapse repos. Extend via biome.json.",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

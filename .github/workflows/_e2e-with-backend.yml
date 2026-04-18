@@ -1,0 +1,135 @@
+name: _e2e-with-backend
+
+# Reusable E2E workflow for frontend repos that need a real backend running.
+# Spins up the standard Octopus service stack (postgres/redis/libretranslate),
+# checks out the backend repo alongside the caller, runs Prisma migrations,
+# starts the backend in the background, builds the caller's app via Turbo,
+# and runs Playwright. The Playwright report is uploaded as an artifact.
+
+on:
+  workflow_call:
+    inputs:
+      backend-repo:
+        description: 'owner/name of the backend repo'
+        required: true
+        type: string
+      backend-ref:
+        description: 'Branch/tag/sha of the backend to pull (default: main)'
+        required: false
+        type: string
+        default: 'main'
+      backend-entrypoint:
+        description: 'Command that runs the backend'
+        required: false
+        type: string
+        default: 'PORT=3001 bun run src/main.ts'
+      backend-health-url:
+        description: 'URL to curl for backend readiness'
+        required: false
+        type: string
+        default: 'http://localhost:3001/health'
+      api-env-var:
+        description: 'Env var the frontend uses to find the backend (e.g. VITE_API_URL)'
+        required: false
+        type: string
+        default: 'VITE_API_URL'
+      api-url:
+        description: 'Value for api-env-var'
+        required: false
+        type: string
+        default: 'http://localhost:3001'
+      build-command:
+        description: 'Command that builds the frontend'
+        required: false
+        type: string
+        default: 'bunx turbo run build'
+      e2e-command:
+        description: 'Command that runs the E2E suite'
+        required: false
+        type: string
+        default: 'bun run test:e2e'
+      e2e-working-directory:
+        description: 'Directory where the e2e-command is run from (relative to repo root)'
+        required: false
+        type: string
+        default: 'apps/web'
+      playwright-report-path:
+        description: 'Path to the Playwright report to upload as artifact'
+        required: false
+        type: string
+        default: 'apps/web/playwright-report/'
+    secrets:
+      cross-repo-token:
+        description: 'Token with repo:read scope on the backend repo (falls back to github.token)'
+        required: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: profile, POSTGRES_PASSWORD: profile, POSTGRES_DB: profile_dev }
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-retries 5
+      libretranslate:
+        image: libretranslate/libretranslate:latest
+        ports: ['5000:5000']
+    env:
+      DATABASE_URL: postgresql://profile:profile@localhost:5432/profile_dev
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      JWT_SECRET: e2e-ci-secret-at-least-32-characters-long-xxx
+      SKIP_EMAIL_VERIFICATION: 'true'
+      LIBRETRANSLATE_URL: http://localhost:5000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.backend-repo }}
+          ref: ${{ inputs.backend-ref }}
+          path: _backend
+          token: ${{ secrets.cross-repo-token || github.token }}
+      - uses: octopus-synapse/octopus-workflows/.github/actions/setup-bun-env@v1
+      - name: Install + migrate backend
+        working-directory: _backend
+        run: |
+          bun install --frozen-lockfile
+          bunx prisma migrate deploy --config prisma.config.ts || bunx prisma migrate deploy
+      - name: Start backend (background)
+        working-directory: _backend
+        run: |
+          ${{ inputs.backend-entrypoint }} &
+          echo $! > /tmp/backend.pid
+          for i in $(seq 1 60); do
+            curl -sf "${{ inputs.backend-health-url }}" >/dev/null && break
+            sleep 2
+          done
+      - name: Build frontend
+        run: ${{ inputs.build-command }}
+        env:
+          ${{ inputs.api-env-var }}: ${{ inputs.api-url }}
+      - name: Install Playwright browsers
+        working-directory: ${{ inputs.e2e-working-directory }}
+        run: bunx playwright install --with-deps chromium
+      - name: Run Playwright
+        working-directory: ${{ inputs.e2e-working-directory }}
+        run: ${{ inputs.e2e-command }}
+        env:
+          ${{ inputs.api-env-var }}: ${{ inputs.api-url }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: ${{ inputs.playwright-report-path }}
+          retention-days: 14
+      - if: always()
+        run: kill "$(cat /tmp/backend.pid)" || true
