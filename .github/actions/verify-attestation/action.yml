@@ -25,6 +25,13 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
+        # bun only honors scoped registries via bunfig.toml in the current
+        # working dir or $HOME. Write both so global and local installs see it.
+        cat > "$HOME/.bunfig.toml" <<EOF
+        [install.scopes]
+        "@octopus-synapse" = { token = "${GH_TOKEN}", url = "https://npm.pkg.github.com/" }
+        EOF
+        # Also drop ~/.npmrc for any tooling (e.g. npm fallback) that reads it.
         {
           echo "@octopus-synapse:registry=https://npm.pkg.github.com"
           echo "//npm.pkg.github.com/:_authToken=${GH_TOKEN}"
