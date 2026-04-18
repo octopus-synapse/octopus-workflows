@@ -28,13 +28,20 @@ runs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        registry-url: 'https://npm.pkg.github.com'
-        scope: '@octopus-synapse'
 
-    - name: Install @octopus-synapse/precommit globally (npm)
+    - name: Write ~/.npmrc for @octopus-synapse
       shell: bash
       env:
-        NODE_AUTH_TOKEN: ${{ inputs.packages-token }}
+        PACKAGES_TOKEN: ${{ inputs.packages-token }}
+      run: |
+        {
+          echo "@octopus-synapse:registry=https://npm.pkg.github.com"
+          echo "//npm.pkg.github.com/:_authToken=${PACKAGES_TOKEN}"
+        } > "$HOME/.npmrc"
+        chmod 600 "$HOME/.npmrc"
+
+    - name: Install @octopus-synapse/precommit globally
+      shell: bash
       run: npm install -g @octopus-synapse/precommit
 
     - name: Verify attestation
