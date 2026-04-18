@@ -102,6 +102,8 @@ jobs:
           path: _backend
           token: ${{ secrets.cross-repo-token || github.token }}
       - uses: octopus-synapse/octopus-workflows/.github/actions/setup-bun-env@v1
+        with:
+          github-token: ${{ github.token }}
       - name: Install + migrate backend
         working-directory: _backend
         run: |
