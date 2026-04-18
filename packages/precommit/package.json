@@ -1,6 +1,6 @@
 {
   "name": "@octopus-synapse/precommit",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Shared pre-commit runner + attestation system for Octopus Synapse repos.",
   "type": "module",
   "publishConfig": {
@@ -21,7 +21,7 @@
   "scripts": {
     "build": "bun build ./bin/attest.ts ./bin/run-parallel.ts ./bin/postinstall.ts --outdir ./dist/bin --target node",
     "typecheck": "tsc --noEmit",
-    "postinstall": "node ./dist/bin/postinstall.js"
+    "postinstall": "node -e \"try{require('./dist/bin/postinstall.js')}catch(e){if(e.code!=='MODULE_NOT_FOUND')throw e}\""
   },
   "devDependencies": {
     "@types/node": "^22",
