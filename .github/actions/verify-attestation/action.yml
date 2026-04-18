@@ -1,10 +1,9 @@
 name: 'Verify Pre-Commit Attestation'
 description: |
   Verifies that .attestation.tree_hash matches the current commit's tree
-  (with .attestation stripped). Runs inside a pre-built Docker image
-  (ghcr.io/octopus-synapse/verify-attestation:v1) so there's no Node / npm
-  setup overhead and no cross-repo package auth needed. Typical runtime:
-  ~1.5–2.5s including image pull.
+  (with .attestation stripped). Pure bash composite action using the git
+  and jq binaries pre-installed on GitHub-hosted runners — no Docker, no
+  Node/npm, no package auth. Typical runtime: ~2s.
 inputs:
   strict:
     description: 'Fail when no attestation file exists (default: true).'
@@ -15,8 +14,55 @@ inputs:
     required: false
     default: '72'
 runs:
-  using: 'docker'
-  image: 'docker://ghcr.io/octopus-synapse/verify-attestation:v1'
-  env:
-    STRICT: ${{ inputs.strict }}
-    MAX_AGE_HOURS: ${{ inputs.max-age-hours }}
+  using: 'composite'
+  steps:
+    - name: Verify attestation
+      shell: bash
+      env:
+        STRICT: ${{ inputs.strict }}
+        MAX_AGE_HOURS: ${{ inputs.max-age-hours }}
+      run: |
+        set -euo pipefail
+
+        if [ ! -f .attestation ]; then
+          if [ "$STRICT" = "true" ]; then
+            echo "::error::No .attestation file. Commit may have bypassed pre-commit hooks."
+            exit 1
+          fi
+          echo "::warning::No .attestation file; continuing because strict=false."
+          exit 0
+        fi
+
+        attested_hash=$(jq -r '.tree_hash' .attestation)
+        if [ -z "$attested_hash" ] || [ "$attested_hash" = "null" ]; then
+          echo "::error::Invalid attestation format — missing tree_hash field."
+          exit 1
+        fi
+
+        # Reconstruct the tree of HEAD with .attestation stripped. Operates on
+        # git objects directly so it works without the index populated.
+        commit_tree=$(git rev-parse "HEAD^{tree}")
+        current_hash=$(git ls-tree "$commit_tree" | grep -vE '\.attestation$' | git mktree)
+
+        echo "attested: $attested_hash"
+        echo "current:  $current_hash"
+
+        if [ "$attested_hash" != "$current_hash" ]; then
+          echo "::error::Tree hash mismatch — code was modified after pre-commit checks (or attestation was forged, or commit was amended)."
+          exit 1
+        fi
+
+        # Age warning (non-fatal).
+        timestamp=$(jq -r '.timestamp // empty' .attestation)
+        if [ -n "$timestamp" ]; then
+          attested_epoch=$(date -d "$timestamp" +%s 2>/dev/null || echo 0)
+          now_epoch=$(date +%s)
+          if [ "$attested_epoch" -gt 0 ]; then
+            age_hours=$(( (now_epoch - attested_epoch) / 3600 ))
+            if [ "$age_hours" -gt "$MAX_AGE_HOURS" ]; then
+              echo "::warning::Attestation is ${age_hours}h old (threshold: ${MAX_AGE_HOURS}h)."
+            fi
+          fi
+        fi
+
+        echo "✓ attestation verified"
