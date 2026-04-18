@@ -12,6 +12,15 @@ inputs:
     description: 'Warn if the attestation is older than N hours (default: 72).'
     required: false
     default: '72'
+  packages-token:
+    description: |
+      Token with read:packages scope on the octopus-synapse org (to install
+      @octopus-synapse/precommit). Defaults to github.token, but the caller
+      should pass secrets.OCTOPUS_PACKAGES_TOKEN (an org-level secret) for
+      cross-repo access because the default GITHUB_TOKEN only reads packages
+      published by the SAME repo.
+    required: false
+    default: ${{ github.token }}
 runs:
   using: 'composite'
   steps:
@@ -25,7 +34,7 @@ runs:
     - name: Install @octopus-synapse/precommit globally (npm)
       shell: bash
       env:
-        NODE_AUTH_TOKEN: ${{ github.token }}
+        NODE_AUTH_TOKEN: ${{ inputs.packages-token }}
       run: npm install -g @octopus-synapse/precommit
 
     - name: Verify attestation
