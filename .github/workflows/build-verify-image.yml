@@ -1,0 +1,65 @@
+name: build-verify-image
+
+# Builds + pushes the verify-attestation Docker image to GHCR whenever a v*.*.*
+# tag is pushed. Tags the image with the exact version, the major moving tag
+# (v1), and :latest. On first push makes the package public so cross-repo
+# workflows can pull without auth.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/verify-attestation
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute tags
+        id: tags
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"       # strip leading v
+          MAJOR="v${VERSION%%.*}"              # e.g., v1
+          {
+            echo "version=v${VERSION}"
+            echo "major=${MAJOR}"
+            echo "taglist=${IMAGE}:v${VERSION},${IMAGE}:${MAJOR},${IMAGE}:latest"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./verify-attestation-image
+          push: true
+          tags: ${{ steps.tags.outputs.taglist }}
+          cache-from: type=gha,scope=verify-attestation
+          cache-to: type=gha,scope=verify-attestation,mode=max
+
+      - name: Ensure image is public
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # First push creates the package as private by default. Make it
+          # public so consumer repos can pull without GH Packages auth.
+          # Idempotent — PATCH returns 204 whether already public or not.
+          gh api --method PATCH \
+            "/orgs/${{ github.repository_owner }}/packages/container/verify-attestation/visibility" \
+            -f visibility=public \
+            && echo "::notice::image is public" \
+            || echo "::warning::could not set visibility (may already be public or lack permissions)"
