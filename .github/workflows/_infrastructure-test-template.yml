@@ -63,10 +63,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: octopus-synapse/octopus-workflows
+          ref: v1
+          path: _shared
 
       - name: Run tests
         id: tests
-        uses: ./.github/actions/run-test-suite
+        uses: ./_shared/.github/actions/run-test-suite
         with:
           test-command: ${{ inputs.test-command }}
           test-name: ${{ inputs.test-name }}
@@ -76,7 +81,7 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          .github/scripts/generate-summary.sh \
+          _shared/.github/scripts/generate-summary.sh \
             "${{ steps.tests.outputs.status || 'failure' }}" \
             "${{ inputs.test-name }} Tests" \
             "${{ steps.tests.outputs.pass || '0' }}" \

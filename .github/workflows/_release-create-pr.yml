@@ -43,9 +43,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: ./.github/actions/setup-bun-env
+      - uses: octopus-synapse/octopus-workflows/.github/actions/setup-bun-env@v1
+        with:
+          github-token: ${{ github.token }}
 
-      - uses: ./.github/actions/setup-git-bot
+      - uses: octopus-synapse/octopus-workflows/.github/actions/setup-git-bot@v1
 
       - name: Get PR labels
         id: labels

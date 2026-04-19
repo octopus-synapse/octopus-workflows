@@ -31,7 +31,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.commit_sha }}
 
-      - uses: ./.github/actions/setup-git-bot
+      - uses: octopus-synapse/octopus-workflows/.github/actions/setup-git-bot@v1
 
       - name: Extract version
         id: version
