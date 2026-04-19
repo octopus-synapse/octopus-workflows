@@ -104,6 +104,8 @@ jobs:
       - uses: octopus-synapse/octopus-workflows/.github/actions/setup-bun-env@v1
         with:
           github-token: ${{ github.token }}
+      - name: Install Typst (for PDF generation in backend)
+        uses: typst-community/setup-typst@v3
       - name: Install + migrate + seed backend
         working-directory: _backend
         run: |
