@@ -31,10 +31,16 @@ runs:
       env:
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
-        {
-          echo "@octopus-synapse:registry=https://npm.pkg.github.com"
-          echo "//npm.pkg.github.com/:_authToken=${INPUT_GITHUB_TOKEN}"
-        } > "$HOME/.npmrc"
+        # Write to both $HOME and workspace so bun and npm find the token
+        # regardless of which config file they prefer.
+        for f in "$HOME/.npmrc" "$GITHUB_WORKSPACE/.npmrc"; do
+          {
+            echo "@octopus-synapse:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${INPUT_GITHUB_TOKEN}"
+          } > "$f"
+        done
+        # Expose as env for bunfig.toml consumers that reference $GITHUB_TOKEN.
+        echo "GITHUB_TOKEN=${INPUT_GITHUB_TOKEN}" >> "$GITHUB_ENV"
 
     - name: Cache Dependencies
       id: cache-deps
