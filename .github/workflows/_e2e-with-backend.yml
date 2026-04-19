@@ -104,19 +104,27 @@ jobs:
       - uses: octopus-synapse/octopus-workflows/.github/actions/setup-bun-env@v1
         with:
           github-token: ${{ github.token }}
-      - name: Install + migrate backend
+      - name: Install + migrate + seed backend
         working-directory: _backend
         run: |
           bun install --frozen-lockfile
           bunx prisma generate
           bunx prisma migrate deploy --config prisma.config.ts || bunx prisma migrate deploy
+          if [ -f prisma/seed.ts ]; then
+            echo "Running seed script..."
+            bun run prisma/seed.ts
+          fi
       - name: Start backend (background)
         working-directory: _backend
         run: |
           ${{ inputs.backend-entrypoint }} &
           echo $! > /tmp/backend.pid
           for i in $(seq 1 60); do
-            curl -sf "${{ inputs.backend-health-url }}" >/dev/null && break
+            code=$(curl -s -o /dev/null -w "%{http_code}" "${{ inputs.backend-health-url }}" || echo "000")
+            if [ "$code" != "000" ]; then
+              echo "Backend ready (HTTP $code)"
+              break
+            fi
             sleep 2
           done
       - name: Build frontend
