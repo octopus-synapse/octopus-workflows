@@ -119,14 +119,20 @@ jobs:
         run: |
           ${{ inputs.backend-entrypoint }} &
           echo $! > /tmp/backend.pid
+          ready=""
           for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" "${{ inputs.backend-health-url }}" || echo "000")
-            if [ "$code" != "000" ]; then
-              echo "Backend ready (HTTP $code)"
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${{ inputs.backend-health-url }}" 2>/dev/null)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              echo "Backend ready (HTTP $code) after ${i} poll(s)"
+              ready=1
               break
             fi
             sleep 2
           done
+          if [ -z "$ready" ]; then
+            echo "::error::Backend never responded after 120s"
+            exit 1
+          fi
       - name: Build frontend
         run: ${{ inputs.build-command }}
         env:
