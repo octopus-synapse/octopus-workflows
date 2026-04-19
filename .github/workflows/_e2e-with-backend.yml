@@ -121,7 +121,7 @@ jobs:
           echo $! > /tmp/backend.pid
           ready=""
           for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${{ inputs.backend-health-url }}" 2>/dev/null)
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${{ inputs.backend-health-url }}" 2>/dev/null || true)
             if [ -n "$code" ] && [ "$code" != "000" ]; then
               echo "Backend ready (HTTP $code) after ${i} poll(s)"
               ready=1
