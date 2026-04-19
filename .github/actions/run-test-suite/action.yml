@@ -41,9 +41,10 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Environment
-      uses: ./.github/actions/setup-bun-env
+      uses: octopus-synapse/octopus-workflows/.github/actions/setup-bun-env@v1
       with:
         with-prisma: ${{ inputs.needs-db }}
+        github-token: ${{ github.token }}
 
     - name: Setup DB
       if: inputs.needs-db == 'true'
