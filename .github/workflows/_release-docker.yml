@@ -36,13 +36,29 @@ jobs:
         with:
           context: .
           push: true
+          # Consumer Dockerfiles authenticate to GitHub Packages (private
+          # @octopus-synapse devDeps) via `--mount=type=secret,id=GITHUB_TOKEN`.
+          # Without this the mount is empty inside the build and `bun install`
+          # 401s on every scoped package — exactly what bit profile-services
+          # release v0.2.2.
+          secrets: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
           tags: |
             ghcr.io/${{ github.repository }}:${{ inputs.tag }}
             ghcr.io/${{ github.repository }}:latest
+          # `cache-from` lists multiple sources; missing ones are warned and
+          # skipped (e.g. on the very first build with no registry cache yet).
+          # The registry ref is now derived from `github.repository` instead of
+          # being hardcoded to profile-services so other consumer repos don't
+          # silently miss their own cache.
           cache-from: |
             type=gha
-            type=registry,ref=ghcr.io/octopus-synapse/profile-services:cache
-          cache-to: type=gha,mode=max
+            type=registry,ref=ghcr.io/${{ github.repository }}:cache
+          # Push the cache layer back to GHCR so subsequent builds can hit it
+          # even when the GHA cache evicts. `mode=max` keeps every layer.
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=ghcr.io/${{ github.repository }}:cache,mode=max
 
       - name: Update release notes
         env:
