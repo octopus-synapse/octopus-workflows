@@ -1,6 +1,6 @@
 {
   "name": "@octopus-synapse/release-cli",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Release-please-compatible CLIs for Octopus Synapse repos: detect release type from labels, calc next version, generate changelogs, gather PR data.",
   "type": "module",
   "publishConfig": {
