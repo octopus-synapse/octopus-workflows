@@ -1,0 +1,44 @@
+{
+  "name": "@octopus-synapse/release-cli",
+  "version": "1.6.0",
+  "description": "Release-please-compatible CLIs for Octopus Synapse repos: detect release type from labels, calc next version, generate changelogs, gather PR data.",
+  "type": "module",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/octopus-synapse/octopus-workflows.git",
+    "directory": "packages/release-cli"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "bin": {
+    "octopus-release-detect": "./dist/cli/detect-release.js",
+    "octopus-release-calc-version": "./dist/cli/calc-version.js",
+    "octopus-release-get-pr-labels": "./dist/cli/get-pr-labels.js",
+    "octopus-release-gather-data": "./dist/cli/gather-changelog-data.js",
+    "octopus-release-gen-changelog": "./dist/cli/gen-changelog.js"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./domain/changelog": "./src/domain/changelog.ts",
+    "./domain/release-type": "./src/domain/release-type.ts",
+    "./domain/version": "./src/domain/version.ts"
+  },
+  "scripts": {
+    "build": "bun build ./src/cli/detect-release.ts ./src/cli/calc-version.ts ./src/cli/get-pr-labels.ts ./src/cli/gather-changelog-data.ts ./src/cli/gen-changelog.ts --outdir ./dist/cli --target bun --external @octokit/graphql --external zod --external bun",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@octokit/graphql": "^9.0.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

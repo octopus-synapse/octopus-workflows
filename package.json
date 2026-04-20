@@ -1,6 +1,6 @@
 {
   "name": "@octopus-synapse/octopus-workflows",
-  "version": "1.0.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "description": "Shared GitHub Actions + workflow templates + precommit tooling for Octopus Synapse repos.",
@@ -8,8 +8,9 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "bun run --filter @octopus-synapse/precommit build",
-    "typecheck": "bun run --filter @octopus-synapse/precommit typecheck"
+    "build": "bun run --filter '@octopus-synapse/precommit' --filter '@octopus-synapse/release-cli' build",
+    "typecheck": "bun run --filter '@octopus-synapse/precommit' --filter '@octopus-synapse/release-cli' typecheck",
+    "test": "bun run --filter '@octopus-synapse/release-cli' test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
