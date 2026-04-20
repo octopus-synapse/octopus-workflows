@@ -21,6 +21,9 @@ on:
 jobs:
   finalize:
     runs-on: ubuntu-latest
+    # contents:write — push tag + create release
+    permissions:
+      contents: write
     outputs:
       released: ${{ steps.release.outputs.released }}
       version: ${{ steps.version.outputs.version }}
@@ -45,12 +48,20 @@ jobs:
         env:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
+          set -euo pipefail
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             git tag -a "$TAG" -m "Release $TAG"
-            git push origin "$TAG"
-            echo "exists=false" >> $GITHUB_OUTPUT
+            # Without an explicit failure here the next step would create a
+            # GitHub release pointing at a tag that doesn't actually exist
+            # remotely — and `released=true` would propagate to docker build
+            # and any downstream deploy. Surface the push failure loudly.
+            if ! git push origin "$TAG"; then
+              echo "::error::Failed to push tag $TAG to origin (check token permissions / branch protection)."
+              exit 1
+            fi
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Get release notes

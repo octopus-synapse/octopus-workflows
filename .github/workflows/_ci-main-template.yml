@@ -96,4 +96,8 @@ jobs:
     steps:
       - uses: octopus-synapse/octopus-workflows/.github/actions/evaluate-ci-results@v1
         with:
-          attestation-result: ${{ needs.verify-attestation.result }}
+          # The action expects `attestation` (not `attestation-result`).
+          # Other tiers default to 'skipped' if not passed; consumers that
+          # delegate them via the matching workflow inputs above should
+          # plumb the results through `needs.<job>.result`.
+          attestation: ${{ needs.verify-attestation.result }}

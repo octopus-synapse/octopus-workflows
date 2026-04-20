@@ -54,35 +54,42 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           FORCED="${{ inputs.forced_type }}"
-          [ -n "$FORCED" ] && { echo "labels=$FORCED" >> $GITHUB_OUTPUT; exit 0; }
+          [ -n "$FORCED" ] && { echo "labels=$FORCED" >> "$GITHUB_OUTPUT"; exit 0; }
 
           LABELS=$(bun src/release/cli/get-pr-labels.ts \
             --sha="${{ inputs.sha }}" \
             --owner="${{ inputs.repository_owner }}" \
             --repo="${{ inputs.repository_name }}" 2>/dev/null || echo "")
-          echo "labels=$LABELS" >> $GITHUB_OUTPUT
+          echo "labels=$LABELS" >> "$GITHUB_OUTPUT"
 
       - name: Detect release type
         id: detect
         run: |
+          set -euo pipefail
           TYPE=$(bun src/release/cli/detect-release.ts --labels="${{ steps.labels.outputs.labels }}")
-          echo "release_type=$TYPE" >> $GITHUB_OUTPUT
+          echo "release_type=$TYPE" >> "$GITHUB_OUTPUT"
 
       - name: Calculate version
         id: version
         if: steps.detect.outputs.release_type != ''
         run: |
-          git fetch origin main
+          set -euo pipefail
+          if ! git fetch origin main; then
+            echo "::error::Could not fetch origin/main — does the branch exist on the remote?"
+            exit 1
+          fi
           CURRENT=$(git show origin/main:package.json | jq -r '.version')
           NEXT=$(bun src/release/cli/calc-version.ts "$CURRENT" "${{ steps.detect.outputs.release_type }}")
-          echo "next=$NEXT" >> $GITHUB_OUTPUT
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog
         if: steps.detect.outputs.release_type != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           bun src/release/cli/gather-changelog-data.ts \
             --release-type="${{ steps.detect.outputs.release_type }}" \
             --next-version="v${{ steps.version.outputs.next }}" \
@@ -97,9 +104,30 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.next }}
         run: |
+          set -euo pipefail
+
+          # Idempotency: bump package.json + .release-please-manifest.json
+          # in-place, but only commit if the working tree actually changed.
+          # Without this guard a re-run of the workflow (same trigger fires
+          # twice, manual dispatch after auto, etc.) creates an empty
+          # chore(release) commit on top of the previous one, leaving
+          # homolog with a sequence of orphaned bumps.
           jq ".version = \"$VERSION\"" package.json > tmp && mv tmp package.json
-          git add package.json && git commit -m "chore(release): v$VERSION" || true
-          git push origin homolog
+          if [ -f .release-please-manifest.json ]; then
+            jq ".\".\" = \"$VERSION\"" .release-please-manifest.json > tmp && mv tmp .release-please-manifest.json
+            git add .release-please-manifest.json
+          fi
+          git add package.json
+
+          if git diff --cached --quiet; then
+            echo "Version files already at v$VERSION — skipping commit."
+          else
+            git commit -m "chore(release): v$VERSION"
+            if ! git push origin homolog; then
+              echo "::error::Failed to push chore(release) commit to homolog."
+              exit 1
+            fi
+          fi
 
           EXISTING=$(gh pr list --head homolog --base main --json number --jq '.[0].number' || echo "")
           BODY=$(cat /tmp/changelog.md)

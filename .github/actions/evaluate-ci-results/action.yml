@@ -2,21 +2,29 @@ name: 'Evaluate CI Results'
 description: 'Aggregate job results and generate CI summary'
 
 inputs:
+  # Every job result is optional and defaults to 'skipped' so consumers
+  # can wire up only the tiers they actually run. Passing 'skipped' keeps
+  # the row in the summary table but doesn't fail the overall check.
   attestation:
     description: 'Pre-commit attestation job result'
-    required: true
+    required: false
+    default: 'skipped'
   build:
     description: 'Docker build job result'
-    required: true
+    required: false
+    default: 'skipped'
   integration:
     description: 'Integration test job result'
-    required: true
+    required: false
+    default: 'skipped'
   e2e:
     description: 'E2E test job result'
-    required: true
+    required: false
+    default: 'skipped'
   security:
     description: 'Security scan job result'
-    required: true
+    required: false
+    default: 'skipped'
 
 outputs:
   success:
