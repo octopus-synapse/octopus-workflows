@@ -9,7 +9,7 @@ on:
         type: string
     outputs:
       released:
-        description: 'Whether release was created'
+        description: 'Whether a fresh release was created (false on re-run over an existing tag)'
         value: ${{ jobs.finalize.outputs.released }}
       version:
         description: 'Release version (without v prefix)'
@@ -100,3 +100,56 @@ jobs:
             --notes-file /tmp/release-notes.md \
             --target main
           echo "released=true" >> $GITHUB_OUTPUT
+
+  # After finalize tags main, main carries a `chore(release): vX.Y.Z` commit
+  # that bumps package.json + .release-please-manifest.json. Without this
+  # job, homolog never sees those bumps — so the NEXT release PR
+  # (homolog -> main) opens with conflicts on exactly those files + the
+  # regenerated .attestation, every single release. This job opens a
+  # maintenance PR that re-aligns homolog with main immediately after
+  # the tag is pushed, so the loop stays flat.
+  sync-main-to-homolog:
+    needs: finalize
+    if: needs.finalize.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout main (the branch that just got the release bump)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: octopus-synapse/octopus-workflows/.github/actions/setup-git-bot@v1
+
+      - name: Open sync PR back to homolog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.finalize.outputs.tag }}
+        run: |
+          set -euo pipefail
+          BRANCH="chore/sync-main-${TAG}"
+
+          # Branch off main carrying the chore(release) commit. Hard-reset
+          # would diverge homolog; a PR is the only safe path because of
+          # branch protection on homolog.
+          git checkout -B "$BRANCH"
+          git push -u origin "$BRANCH" --force
+
+          # If a PR for this tag already exists (re-run safety), skip
+          # creation — the previous attempt is still open and mergeable.
+          EXISTING=$(gh pr list --head "$BRANCH" --base homolog --json number --jq '.[0].number' || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "Sync PR already exists as #$EXISTING — leaving it for the team to merge."
+            exit 0
+          fi
+
+          gh pr create \
+            --base homolog \
+            --head "$BRANCH" \
+            --title "chore(release): sync main back to homolog after ${TAG}" \
+            --body "Automated after release ${TAG}. Carries the chore(release) commit from main back to homolog so release-please's manifest stays accurate and the next release PR doesn't open with trivial conflicts on package.json / .release-please-manifest.json." \
+            --label patch
