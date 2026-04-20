@@ -34,6 +34,10 @@ jobs:
         working-directory: packages/precommit
         run: bun run build
 
+      - name: Build release-cli package
+        working-directory: packages/release-cli
+        run: bun run build
+
       - name: Configure npm auth for GitHub Packages
         run: |
           echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> ~/.npmrc
@@ -55,6 +59,12 @@ jobs:
 
       - name: Publish @octopus-synapse/precommit
         working-directory: packages/precommit
+        run: npm publish --registry https://npm.pkg.github.com
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+
+      - name: Publish @octopus-synapse/release-cli
+        working-directory: packages/release-cli
         run: npm publish --registry https://npm.pkg.github.com
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
