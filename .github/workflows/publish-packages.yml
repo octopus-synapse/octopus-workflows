@@ -1,9 +1,12 @@
 name: publish-packages
 
 # Publishes all @octopus-synapse/* npm packages in packages/* to GitHub Packages
-# whenever a v* tag is pushed. Moves the `v1` moving tag to the commit on
-# successful publish so consumer `uses: octopus-synapse/octopus-workflows/...@v1`
-# resolves to the latest compatible release.
+# whenever a v* tag is pushed. Publish is idempotent: a package whose version
+# is already on the registry is silently skipped, so bumping only a single
+# package's version doesn't require touching the others. Moves the `v1`
+# moving tag on successful publish so consumer
+# `uses: octopus-synapse/octopus-workflows/...@v1` resolves to the latest
+# compatible release.
 
 on:
   push:
@@ -45,29 +48,40 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Publish @octopus-synapse/biome-config
-        working-directory: packages/biome-config
-        run: npm publish --registry https://npm.pkg.github.com
+      # Publish each package independently. A 409 Conflict (version already
+      # on the registry) is expected when only some packages have been bumped
+      # — we swallow it and continue instead of failing the whole workflow.
+      # Anything else still fails loudly.
+      - name: Publish all packages (idempotent)
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
 
-      - name: Publish @octopus-synapse/commitlint-config
-        working-directory: packages/commitlint-config
-        run: npm publish --registry https://npm.pkg.github.com
-        env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
+          publish_pkg() {
+            local dir="$1"
+            local name="$2"
+            echo "::group::Publishing $name"
+            local log
+            if ! log=$(npm publish --registry https://npm.pkg.github.com 2>&1); then
+              if echo "$log" | grep -qE "E409|Cannot publish over existing version|already exists"; then
+                echo "[$name] already on registry at this version — skipping."
+              else
+                echo "$log"
+                echo "::error::Publish failed for $name"
+                return 1
+              fi
+            else
+              echo "$log"
+              echo "[$name] published."
+            fi
+            echo "::endgroup::"
+          }
 
-      - name: Publish @octopus-synapse/precommit
-        working-directory: packages/precommit
-        run: npm publish --registry https://npm.pkg.github.com
-        env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
-
-      - name: Publish @octopus-synapse/release-cli
-        working-directory: packages/release-cli
-        run: npm publish --registry https://npm.pkg.github.com
-        env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
+          (cd packages/biome-config && publish_pkg . "@octopus-synapse/biome-config")
+          (cd packages/commitlint-config && publish_pkg . "@octopus-synapse/commitlint-config")
+          (cd packages/precommit && publish_pkg . "@octopus-synapse/precommit")
+          (cd packages/release-cli && publish_pkg . "@octopus-synapse/release-cli")
 
       - name: Move major version tag (v1)
         if: startsWith(github.ref_name, 'v1.')
