@@ -21,6 +21,13 @@ runs:
       env:
         STRICT: ${{ inputs.strict }}
         MAX_AGE_HOURS: ${{ inputs.max-age-hours }}
+        # On pull_request events, GitHub checks out a synthesized merge
+        # commit (PR base + head). The merge tree differs from the head
+        # tree, so HEAD^{tree} would never match an attestation generated
+        # against the head SHA. Use the head SHA explicitly so verification
+        # works on PR runs without forcing every contributor to rebase.
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        EVENT_NAME: ${{ github.event_name }}
       run: |
         set -euo pipefail
 
@@ -39,11 +46,26 @@ runs:
           exit 1
         fi
 
-        # Reconstruct the tree of HEAD with .attestation stripped. Operates on
-        # git objects directly so it works without the index populated.
-        commit_tree=$(git rev-parse "HEAD^{tree}")
+        # Pick the SHA whose tree the attestation actually claims to cover.
+        # On pull_request events that's the PR head, not GitHub's merge
+        # commit. On every other event HEAD is correct.
+        target_sha="HEAD"
+        if [ "$EVENT_NAME" = "pull_request" ] && [ -n "$PR_HEAD_SHA" ]; then
+          # Make sure the head ref is locally available — `actions/checkout`
+          # in PR mode does fetch the head ref, but only the tip; this is
+          # a no-op when the object is already cached.
+          git fetch --no-tags --depth=1 origin "$PR_HEAD_SHA" 2>/dev/null || true
+          target_sha="$PR_HEAD_SHA"
+        fi
+
+        # Reconstruct the tree of the target commit with .attestation
+        # stripped. Operates on git objects directly so it works without the
+        # index populated.
+        commit_tree=$(git rev-parse "${target_sha}^{tree}")
         current_hash=$(git ls-tree "$commit_tree" | grep -vE '\.attestation$' | git mktree)
 
+        echo "event:    $EVENT_NAME"
+        echo "target:   $target_sha"
         echo "attested: $attested_hash"
         echo "current:  $current_hash"
 

@@ -11,6 +11,11 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # contents:write — `gh release edit` (line 51) needs it
+    # packages:write — `docker push` to GHCR uses it
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
         with:
