@@ -21,6 +21,27 @@ on:
         required: false
         type: number
         default: 15
+      extra-env-vars:
+        description: |
+          Extra `KEY=value` pairs (one per line) merged into the env
+          of the test step. Use for things like `BCRYPT_COST=4`,
+          `SHARDS=2`, `LOG_LEVEL=error`. Variables defined here win
+          over the template defaults.
+        required: false
+        type: string
+        default: ""
+      db-init-sql:
+        description: |
+          SQL run against the postgres service before the test step.
+          Useful for test-only knobs that accept `pg_reload_conf()`
+          (e.g. `ALTER SYSTEM SET synchronous_commit = off`).
+          Settings that need a postgres restart (`fsync`, `wal_level`)
+          can't be flipped via this hook because GitHub Actions
+          services don't accept a custom `command:` — those need a
+          custom image.
+        required: false
+        type: string
+        default: ""
 
 env:
   DATABASE_URL: postgresql://postgres:postgres@localhost:5433/${{ inputs.db-name }}
@@ -68,6 +89,42 @@ jobs:
           repository: octopus-synapse/octopus-workflows
           ref: v1
           path: _shared
+
+      - name: Apply test-only postgres tunings
+        if: inputs.db-init-sql != ''
+        env:
+          PGPASSWORD: postgres
+          DB: ${{ inputs.db-name }}
+        run: |
+          # Wait for postgres to fully accept connections (the service
+          # health-check covers up but `psql` can still race the first
+          # query on cold containers).
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5433 -U postgres -d "$DB" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          # Pipe the user-supplied SQL into psql. `ON_ERROR_STOP=on`
+          # turns any DDL failure into a non-zero exit so the workflow
+          # surfaces the real cause rather than swallowing it.
+          psql -h localhost -p 5433 -U postgres -d "$DB" \
+               -v ON_ERROR_STOP=on <<'SQL'
+          ${{ inputs.db-init-sql }}
+          SQL
+
+      - name: Export extra env vars
+        if: inputs.extra-env-vars != ''
+        run: |
+          # Each non-empty line in `extra-env-vars` is already in the
+          # `KEY=VALUE` shape `$GITHUB_ENV` consumes — pipe it through
+          # so subsequent steps see the variables.
+          while IFS= read -r line; do
+            [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+            echo "$line" >> "$GITHUB_ENV"
+          done <<'ENV'
+          ${{ inputs.extra-env-vars }}
+          ENV
 
       - name: Run tests
         id: tests
