@@ -1,0 +1,57 @@
+name: _branch-name-validator
+
+# Reusable branch-name validator. Consumer repos wire this on `pull_request`
+# to enforce conventional branch names. The rule is permissive: any branch
+# starting with a recognised prefix is accepted; reserved long-lived names
+# (`main`, `master`, `homolog`, `production`, `release/*`, `refactor/backend`,
+# `refactor/frontend`) bypass the prefix check so the workflow doesn't fail
+# on the receiving side of a release-please or refactor sweep.
+#
+# The pattern lives here (not as a composite action) because it needs zero
+# runtime — a single grep against a string GitHub already provides.
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: >
+          The branch name to validate. Default: `github.head_ref` (the PR's
+          source branch). Override only when called from a non-PR workflow.
+        type: string
+        default: ${{ github.head_ref }}
+
+jobs:
+  validate:
+    name: validate branch name
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check branch name format
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+          : "${BRANCH:?branch input is empty — supply github.head_ref or override}"
+
+          # Long-lived / release branches bypass the prefix check.
+          reserved_re='^(main|master|homolog|production|staging|release/.+|refactor/backend|refactor/frontend)$'
+          if [[ "$BRANCH" =~ $reserved_re ]]; then
+            echo "Branch '$BRANCH' is a reserved long-lived branch — skipping prefix check."
+            exit 0
+          fi
+
+          # Otherwise: enforce conventional prefix.
+          prefix_re='^(feat|fix|chore|refactor|test|docs|ci|perf|build|revert|hotfix)(\([a-z0-9._-]+\))?/[a-z0-9._-]+'
+          if [[ ! "$BRANCH" =~ $prefix_re ]]; then
+            echo "::error::Branch name '$BRANCH' does not match the convention." >&2
+            echo "" >&2
+            echo "Expected: <type>[(scope)]/<kebab-case-summary>" >&2
+            echo "Types:    feat | fix | chore | refactor | test | docs | ci | perf | build | revert | hotfix" >&2
+            echo "Example:  feat/add-resume-quality-rank" >&2
+            echo "          fix(api)/empty-body-on-204" >&2
+            echo "          refactor/clean-arch-invariant" >&2
+            echo "" >&2
+            echo "Reserved long-lived branches: main, master, homolog, production, staging, release/*, refactor/backend, refactor/frontend." >&2
+            exit 1
+          fi
+
+          echo "Branch '$BRANCH' OK."
