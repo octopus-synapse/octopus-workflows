@@ -1,18 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
+    "github>octopus-synapse/renovate-config",
     ":automergeDigest",
     ":maintainLockFilesWeekly"
   ],
-  "pinDigests": true,
-  "rebaseWhen": "behind-base-branch",
-  "packageRules": [
-    {
-      "matchManagers": ["github-actions"],
-      "pinDigests": true,
-      "automerge": true,
-      "automergeType": "branch"
-    }
-  ]
+  "rebaseWhen": "behind-base-branch"
 }
