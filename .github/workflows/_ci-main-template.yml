@@ -68,7 +68,7 @@ jobs:
       should_skip: ${{ steps.skip.outputs.should_skip }}
     steps:
       - id: skip
-        uses: fkirc/skip-duplicate-actions@v5
+        uses: fkirc/skip-duplicate-actions@f75f66ce1886f00957d99748a42c724f4330bdcf # v5
         with:
           concurrent_skipping: 'same_content_newer'
           skip_after_successful_duplicate: 'true'
@@ -78,7 +78,7 @@ jobs:
     if: ${{ needs.skip-duplicates.outputs.should_skip != 'true' && inputs.run-verify-attestation }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: octopus-synapse/octopus-workflows/.github/actions/verify-attestation@v1
 
   # The actual build/test jobs are delegated back to the consumer repo's own

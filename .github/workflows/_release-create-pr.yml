@@ -39,7 +39,7 @@ jobs:
       release_type: ${{ steps.detect.outputs.release_type }}
       next_version: ${{ steps.version.outputs.next }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
