@@ -32,6 +32,12 @@ on:
         description: 'Next version'
         value: ${{ jobs.create-pr.outputs.next_version }}
 
+# Pin the release-cli version so a bad publish in @octopus-synapse/release-cli
+# can't quietly change the release semantics of every consumer repo. Bump
+# this in lockstep with packages/release-cli/package.json.
+env:
+  RELEASE_CLI_VERSION: '1.7.0'
+
 jobs:
   create-pr:
     runs-on: ubuntu-latest
@@ -67,7 +73,7 @@ jobs:
           # Use the shared @octopus-synapse/release-cli package — consumer
           # repos no longer need to vendor src/release/* themselves. setup-bun-env
           # already configured the GH Packages scope, so `bunx` resolves it.
-          LABELS=$(bunx --package @octopus-synapse/release-cli octopus-release-get-pr-labels \
+          LABELS=$(bunx --package @octopus-synapse/release-cli@$RELEASE_CLI_VERSION octopus-release-get-pr-labels \
             --sha="$INPUT_SHA" \
             --owner="$INPUT_OWNER" \
             --repo="$INPUT_REPO" 2>/dev/null || echo "")
@@ -79,7 +85,7 @@ jobs:
           LABELS: ${{ steps.labels.outputs.labels }}
         run: |
           set -euo pipefail
-          TYPE=$(bunx --package @octopus-synapse/release-cli octopus-release-detect \
+          TYPE=$(bunx --package @octopus-synapse/release-cli@$RELEASE_CLI_VERSION octopus-release-detect \
             --labels="$LABELS")
           echo "release_type=$TYPE" >> "$GITHUB_OUTPUT"
 
@@ -95,7 +101,7 @@ jobs:
             exit 1
           fi
           CURRENT=$(git show origin/main:package.json | jq -r '.version')
-          NEXT=$(bunx --package @octopus-synapse/release-cli octopus-release-calc-version \
+          NEXT=$(bunx --package @octopus-synapse/release-cli@$RELEASE_CLI_VERSION octopus-release-calc-version \
             "$CURRENT" "$RELEASE_TYPE")
           echo "next=$NEXT" >> "$GITHUB_OUTPUT"
 
@@ -108,11 +114,11 @@ jobs:
           INPUT_REPOSITORY: ${{ inputs.repository }}
         run: |
           set -euo pipefail
-          bunx --package @octopus-synapse/release-cli octopus-release-gather-data \
+          bunx --package @octopus-synapse/release-cli@$RELEASE_CLI_VERSION octopus-release-gather-data \
             --release-type="$RELEASE_TYPE" \
             --next-version="v$NEXT_VERSION" \
             --repository="$INPUT_REPOSITORY" \
-            | bunx --package @octopus-synapse/release-cli octopus-release-gen-changelog \
+            | bunx --package @octopus-synapse/release-cli@$RELEASE_CLI_VERSION octopus-release-gen-changelog \
             > /tmp/changelog.md
 
           printf '\n---\n\n> :warning: **Merging this PR will create release v%s**\n' \
