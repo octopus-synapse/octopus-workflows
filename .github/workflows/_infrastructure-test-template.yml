@@ -95,36 +95,31 @@ jobs:
         env:
           PGPASSWORD: postgres
           DB: ${{ inputs.db-name }}
+          DB_INIT_SQL: ${{ inputs.db-init-sql }}
         run: |
-          # Wait for postgres to fully accept connections (the service
-          # health-check covers up but `psql` can still race the first
-          # query on cold containers).
           for i in {1..30}; do
             if pg_isready -h localhost -p 5433 -U postgres -d "$DB" >/dev/null 2>&1; then
               break
             fi
             sleep 1
           done
-          # Pipe the user-supplied SQL into psql. `ON_ERROR_STOP=on`
-          # turns any DDL failure into a non-zero exit so the workflow
-          # surfaces the real cause rather than swallowing it.
+          printf '%s\n' "$DB_INIT_SQL" > /tmp/db-init.sql
           psql -h localhost -p 5433 -U postgres -d "$DB" \
-               -v ON_ERROR_STOP=on <<'SQL'
-          ${{ inputs.db-init-sql }}
-          SQL
+               -v ON_ERROR_STOP=on -f /tmp/db-init.sql
 
       - name: Export extra env vars
         if: inputs.extra-env-vars != ''
+        env:
+          EXTRA_ENV_VARS: ${{ inputs.extra-env-vars }}
         run: |
-          # Each non-empty line in `extra-env-vars` is already in the
-          # `KEY=VALUE` shape `$GITHUB_ENV` consumes — pipe it through
-          # so subsequent steps see the variables.
           while IFS= read -r line; do
             [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-            echo "$line" >> "$GITHUB_ENV"
-          done <<'ENV'
-          ${{ inputs.extra-env-vars }}
-          ENV
+            if [[ ! "$line" =~ ^[A-Z_][A-Z0-9_]*=.*$ ]]; then
+              echo "::error::Rejected extra-env-vars line (must match ^[A-Z_][A-Z0-9_]*=.*$): $line"
+              exit 1
+            fi
+            printf '%s\n' "$line" >> "$GITHUB_ENV"
+          done <<< "$EXTRA_ENV_VARS"
 
       - name: Run tests
         id: tests
