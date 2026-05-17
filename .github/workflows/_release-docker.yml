@@ -31,7 +31,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # PR builds: scope GHA cache by branch so concurrent PRs don't poison
+      # each other's cache. Don't push to the shared registry layer — that's
+      # reserved for tagged releases (cache contamination = mis-tagged image
+      # contents on the next release).
+      - name: Build and push (PR cache mode)
+        if: github.event_name == 'pull_request'
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: .
@@ -46,16 +51,32 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:${{ inputs.tag }}
             ghcr.io/${{ github.repository }}:latest
-          # `cache-from` lists multiple sources; missing ones are warned and
-          # skipped (e.g. on the very first build with no registry cache yet).
-          # The registry ref is now derived from `github.repository` instead of
-          # being hardcoded to profile-services so other consumer repos don't
-          # silently miss their own cache.
+          # Read from both sources for max hit rate; warm starts from the
+          # registry layer that the latest release pushed, fall back to GHA
+          # cache for branch-local iterations.
+          cache-from: |
+            type=gha,scope=pr-${{ github.ref_name }}
+            type=registry,ref=ghcr.io/${{ github.repository }}:cache
+          cache-to: |
+            type=gha,mode=max,scope=pr-${{ github.ref_name }}
+
+      # Release builds: write to the shared registry layer so cold builds
+      # (and other repos that pull this cache) benefit. Also keep a default-
+      # scope GHA cache so back-to-back releases on the same runner reuse.
+      - name: Build and push (release cache mode)
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          context: .
+          push: true
+          secrets: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ inputs.tag }}
+            ghcr.io/${{ github.repository }}:latest
           cache-from: |
             type=gha
             type=registry,ref=ghcr.io/${{ github.repository }}:cache
-          # Push the cache layer back to GHCR so subsequent builds can hit it
-          # even when the GHA cache evicts. `mode=max` keeps every layer.
           cache-to: |
             type=gha,mode=max
             type=registry,ref=ghcr.io/${{ github.repository }}:cache,mode=max
