@@ -45,12 +45,19 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          TEST_STATUS: ${{ steps.tests.outputs.status || 'failure' }}
+          TEST_NAME: ${{ inputs.test-name }}
+          TEST_PASS: ${{ steps.tests.outputs.pass || '0' }}
+          TEST_FAIL: ${{ steps.tests.outputs.fail || '0' }}
+          TEST_SKIP: ${{ steps.tests.outputs.skip || '0' }}
+          TEST_DURATION: ${{ steps.tests.outputs.duration || '0' }}
         run: |
           _shared/.github/scripts/generate-summary.sh \
-            "${{ steps.tests.outputs.status || 'failure' }}" \
-            "${{ inputs.test-name }}" \
-            "${{ steps.tests.outputs.pass || '0' }}" \
-            "${{ steps.tests.outputs.fail || '0' }}" \
-            "${{ steps.tests.outputs.skip || '0' }}" \
-            "${{ steps.tests.outputs.duration || '0' }}" \
+            "$TEST_STATUS" \
+            "$TEST_NAME" \
+            "$TEST_PASS" \
+            "$TEST_FAIL" \
+            "$TEST_SKIP" \
+            "$TEST_DURATION" \
             test-output.txt
