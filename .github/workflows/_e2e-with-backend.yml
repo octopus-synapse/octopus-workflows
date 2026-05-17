@@ -118,12 +118,16 @@ jobs:
           fi
       - name: Start backend (background)
         working-directory: _backend
+        env:
+          BACKEND_ENTRYPOINT: ${{ inputs.backend-entrypoint }}
+          BACKEND_HEALTH_URL: ${{ inputs.backend-health-url }}
         run: |
-          ${{ inputs.backend-entrypoint }} &
+          set -euo pipefail
+          bash -c "$BACKEND_ENTRYPOINT" &
           echo $! > /tmp/backend.pid
           ready=""
           for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${{ inputs.backend-health-url }}" 2>/dev/null || true)
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$BACKEND_HEALTH_URL" 2>/dev/null || true)
             if [ -n "$code" ] && [ "$code" != "000" ]; then
               echo "Backend ready (HTTP $code) after ${i} poll(s)"
               ready=1
@@ -136,17 +140,27 @@ jobs:
             exit 1
           fi
       - name: Build frontend
-        run: ${{ inputs.build-command }}
         env:
-          ${{ inputs.api-env-var }}: ${{ inputs.api-url }}
+          BUILD_COMMAND: ${{ inputs.build-command }}
+          API_ENV_VAR: ${{ inputs.api-env-var }}
+          API_URL: ${{ inputs.api-url }}
+        run: |
+          set -euo pipefail
+          export "$API_ENV_VAR=$API_URL"
+          bash -c "$BUILD_COMMAND"
       - name: Install Playwright browsers
         working-directory: ${{ inputs.e2e-working-directory }}
         run: bunx playwright install --with-deps chromium
       - name: Run Playwright
         working-directory: ${{ inputs.e2e-working-directory }}
-        run: ${{ inputs.e2e-command }}
         env:
-          ${{ inputs.api-env-var }}: ${{ inputs.api-url }}
+          E2E_COMMAND: ${{ inputs.e2e-command }}
+          API_ENV_VAR: ${{ inputs.api-env-var }}
+          API_URL: ${{ inputs.api-url }}
+        run: |
+          set -euo pipefail
+          export "$API_ENV_VAR=$API_URL"
+          bash -c "$E2E_COMMAND"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
