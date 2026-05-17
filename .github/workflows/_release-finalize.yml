@@ -68,6 +68,9 @@ jobs:
         id: notes
         env:
           GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
         run: |
           PR_BODY=$(gh api graphql -f query='
             query($sha: String!, $owner: String!, $repo: String!) {
@@ -81,12 +84,12 @@ jobs:
                 }
               }
             }
-          ' -f sha="${{ inputs.commit_sha }}" \
-            -f owner="${{ github.repository_owner }}" \
-            -f repo="${{ github.event.repository.name }}" \
+          ' -f sha="$COMMIT_SHA" \
+            -f owner="$REPO_OWNER" \
+            -f repo="$REPO_NAME" \
             --jq '.data.repository.commit.associatedPullRequests.nodes[0].body // ""' 2>/dev/null || echo "")
 
-          echo "$PR_BODY" | sed '/^> ⚠️/d' | sed '/^---$/,/^---$/d' > /tmp/release-notes.md
+          echo "$PR_BODY" | sed -e '/^> :warning:/d' -e '/^> ⚠️/d' | sed '/^---$/,/^---$/d' > /tmp/release-notes.md
 
       - name: Create release
         id: release
