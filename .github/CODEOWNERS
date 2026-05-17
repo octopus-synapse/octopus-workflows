@@ -1,0 +1,23 @@
+# CODEOWNERS for octopus-workflows
+#
+# This repo ships reusable workflows + composite actions consumed by every
+# octopus-synapse service. A bad merge here can break CI on every consumer
+# repo simultaneously — so changes to workflow infra require review.
+#
+# NOTE: @octopus-synapse/platform-team is a placeholder team slug; rename
+# it to whatever team the org actually has (or fall back to individual
+# usernames) before relying on enforcement.
+
+# Workflows + composite actions (consumed cross-repo).
+/.github/                       @octopus-synapse/platform-team
+
+# Local tooling (pin-actions, renovate preset source).
+/_tooling/                      @octopus-synapse/platform-team
+
+# Release CLI (semantics of every release PR + tag).
+/packages/release-cli/          @octopus-synapse/platform-team
+
+# Precommit + lint configs (used by every consumer repo).
+/packages/precommit/            @octopus-synapse/platform-team
+/packages/biome-config/         @octopus-synapse/platform-team
+/packages/commitlint-config/    @octopus-synapse/platform-team
