@@ -60,6 +60,10 @@ jobs:
       - uses: octopus-synapse/octopus-workflows/.github/actions/setup-bun-env@v1
         with:
           github-token: ${{ github.token }}
+          # Prisma client must be generated before the bump-version `git commit`
+          # below fires the consumer's husky pre-commit (typecheck). Without it,
+          # `tsc --noEmit` breaks on every Prisma model accessor / enum import.
+          with-prisma: 'true'
 
       - uses: octopus-synapse/octopus-workflows/.github/actions/setup-git-bot@v1
 
