@@ -140,15 +140,23 @@ jobs:
         run: |
           set -euo pipefail
 
+          # P1-#A6-9: validate $VERSION against semver before any shell/jq/git
+          # interpolation. Without this guard, a poisoned `steps.version.outputs.next`
+          # would inject into `jq` filter, `git commit -m`, and `gh pr` args.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "::error::Refusing to proceed: VERSION='$VERSION' is not a valid semver string."
+            exit 1
+          fi
+
           # Idempotency: bump package.json + .release-please-manifest.json
           # in-place, but only commit if the working tree actually changed.
           # Without this guard a re-run of the workflow (same trigger fires
           # twice, manual dispatch after auto, etc.) creates an empty
           # chore(release) commit on top of the previous one, leaving
           # homolog with a sequence of orphaned bumps.
-          jq ".version = \"$VERSION\"" package.json > tmp && mv tmp package.json
+          jq --arg v "$VERSION" '.version = $v' package.json > tmp && mv tmp package.json
           if [ -f .release-please-manifest.json ]; then
-            jq ".\".\" = \"$VERSION\"" .release-please-manifest.json > tmp && mv tmp .release-please-manifest.json
+            jq --arg v "$VERSION" '."." = $v' .release-please-manifest.json > tmp && mv tmp .release-please-manifest.json
             git add .release-please-manifest.json
           fi
           git add package.json

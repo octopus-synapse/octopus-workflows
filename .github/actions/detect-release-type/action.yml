@@ -17,14 +17,20 @@ runs:
     - name: Detect release type
       id: detect
       shell: bash
+      # P1-#A6-24: src/release/cli/* was moved to packages/release-cli/.
+      env:
+        RELEASE_CLI_VERSION: '1.7.0'
+        LABELS_INPUT: ${{ inputs.labels }}
       run: |
-        RELEASE_TYPE=$(bun src/release/cli/detect-release.ts --labels="${{ inputs.labels }}")
-        echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
+        set -euo pipefail
+        RELEASE_TYPE=$(bunx --package "@octopus-synapse/release-cli@$RELEASE_CLI_VERSION" octopus-release-detect \
+          --labels="$LABELS_INPUT")
+        echo "release_type=$RELEASE_TYPE" >> "$GITHUB_OUTPUT"
 
         if [ -n "$RELEASE_TYPE" ]; then
-          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
           echo "🚀 Detected release type: $RELEASE_TYPE"
         else
-          echo "should_release=false" >> $GITHUB_OUTPUT
+          echo "should_release=false" >> "$GITHUB_OUTPUT"
           echo "ℹ️ No release label found"
         fi

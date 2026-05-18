@@ -182,4 +182,18 @@ jobs:
           path: ${{ inputs.playwright-report-path }}
           retention-days: 14
       - if: always()
-        run: kill "$(cat /tmp/backend.pid)" || true
+        name: Shutdown backend (graceful, then SIGKILL fallback)
+        run: |
+          # P1-#A6-18: SIGTERM first so the backend can flush logs/close
+          # connections/release ports; only force-kill after 10s grace.
+          # Without this, in-flight DB transactions and SSE clients are
+          # cut, leaving artifacts in inconsistent state and flaking E2E
+          # post-checks that read those artifacts.
+          PID="$(cat /tmp/backend.pid 2>/dev/null || true)"
+          [ -n "$PID" ] || exit 0
+          kill -TERM "$PID" 2>/dev/null || exit 0
+          for _ in $(seq 1 10); do
+            kill -0 "$PID" 2>/dev/null || exit 0
+            sleep 1
+          done
+          kill -KILL "$PID" 2>/dev/null || true

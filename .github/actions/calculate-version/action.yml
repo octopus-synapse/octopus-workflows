@@ -21,13 +21,24 @@ runs:
     - name: Calculate next version
       id: calc
       shell: bash
+      # P1-#A6-24: src/release/cli/* was moved to packages/release-cli/.
+      # Use the published @octopus-synapse/release-cli package, matching the
+      # invocation pattern in _release-create-pr.yml. Bump in lockstep with
+      # packages/release-cli/package.json.
+      env:
+        RELEASE_CLI_VERSION: '1.7.0'
+        CURRENT_VERSION: ${{ inputs.current_version }}
+        RELEASE_TYPE: ${{ inputs.release_type }}
+        WITH_PREFIX: ${{ inputs.with_prefix }}
       run: |
+        set -euo pipefail
         PREFIX_FLAG=""
-        if [ "${{ inputs.with_prefix }}" == "true" ]; then
+        if [ "$WITH_PREFIX" = "true" ]; then
           PREFIX_FLAG="--with-prefix"
         fi
 
-        NEXT=$(bun src/release/cli/calc-version.ts "${{ inputs.current_version }}" "${{ inputs.release_type }}" $PREFIX_FLAG)
+        NEXT=$(bunx --package "@octopus-synapse/release-cli@$RELEASE_CLI_VERSION" octopus-release-calc-version \
+          "$CURRENT_VERSION" "$RELEASE_TYPE" $PREFIX_FLAG)
 
-        echo "next_version=$NEXT" >> $GITHUB_OUTPUT
-        echo "📦 Version: ${{ inputs.current_version }} → $NEXT (${{ inputs.release_type }})"
+        echo "next_version=$NEXT" >> "$GITHUB_OUTPUT"
+        echo "📦 Version: $CURRENT_VERSION → $NEXT ($RELEASE_TYPE)"

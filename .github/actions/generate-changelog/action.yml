@@ -27,14 +27,23 @@ runs:
     - name: Generate changelog
       id: generate
       shell: bash
+      # P1-#A6-24: src/release/cli/* was moved to packages/release-cli/.
+      env:
+        RELEASE_CLI_VERSION: '1.7.0'
+        NEXT_VERSION: ${{ inputs.next_version }}
+        INPUT_FILE: ${{ inputs.changelog_input_file }}
+        OUTPUT_FILE: ${{ inputs.output_file }}
       run: |
+        set -euo pipefail
         # Generate header
-        cat > "${{ inputs.output_file }}" << EOF
-        ## Release ${{ inputs.next_version }}
+        cat > "$OUTPUT_FILE" << EOF
+        ## Release $NEXT_VERSION
 
         EOF
 
-        # Generate body using TypeScript CLI
-        cat "${{ inputs.changelog_input_file }}" | bun src/release/cli/gen-changelog.ts >> "${{ inputs.output_file }}"
+        # Generate body using the published @octopus-synapse/release-cli package.
+        cat "$INPUT_FILE" \
+          | bunx --package "@octopus-synapse/release-cli@$RELEASE_CLI_VERSION" octopus-release-gen-changelog \
+          >> "$OUTPUT_FILE"
 
-        echo "✅ Changelog generated at ${{ inputs.output_file }}"
+        echo "✅ Changelog generated at $OUTPUT_FILE"
