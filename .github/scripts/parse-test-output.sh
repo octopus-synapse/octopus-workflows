@@ -28,15 +28,34 @@ parse_test_output() {
         return 1
     fi
 
-    # Extract last 20 lines where summary typically appears
-    local summary
-    summary=$(tail -20 "$file")
+    # P2-#60: anchor parsing to the Bun summary block instead of a free
+    # `tail -20`. A test whose name happens to contain ` 12 pass` (e.g.
+    # "should report 12 pass-throughs") used to poison the count when
+    # the run printed it within the tail window. Locate the line that
+    # carries `Ran N tests across M files.` — that's the canonical
+    # marker for the summary — and read counts from the preceding
+    # lines, where ` N pass / N fail / N skip` actually live.
+    local summary_anchor_line
+    summary_anchor_line=$(grep -nE '^Ran [0-9]+ tests across [0-9]+ files\.' "$file" | tail -1 | cut -d: -f1)
 
-    # Parse metrics using consistent patterns
-    # Bun format: " 10 pass" " 2 fail" " 1 skip" "across 5 files"
-    PASS=$(echo "$summary" | grep -oE ' [0-9]+ pass' | grep -oE '[0-9]+' | head -1 || echo "0")
-    FAIL=$(echo "$summary" | grep -oE ' [0-9]+ fail' | grep -oE '[0-9]+' | head -1 || echo "0")
-    SKIP=$(echo "$summary" | grep -oE ' [0-9]+ skip' | grep -oE '[0-9]+' | head -1 || echo "0")
+    local summary
+    if [[ -n "$summary_anchor_line" ]]; then
+        # Read the anchor + the 10 lines immediately before it (where
+        # ` 10 pass`, ` 2 fail`, ` 1 skip` are printed).
+        local start_line=$(( summary_anchor_line - 10 ))
+        [[ $start_line -lt 1 ]] && start_line=1
+        summary=$(sed -n "${start_line},${summary_anchor_line}p" "$file")
+    else
+        # Fallback for outputs without the canonical summary line
+        # (interrupted runs, partial pipelines).
+        summary=$(tail -20 "$file")
+    fi
+
+    # Bun format inside the summary block:
+    #   "  10 pass\n   2 fail\n   1 skip\nRan 13 tests across 5 files."
+    PASS=$(echo "$summary" | grep -oE '^\s*[0-9]+ pass' | grep -oE '[0-9]+' | head -1 || echo "0")
+    FAIL=$(echo "$summary" | grep -oE '^\s*[0-9]+ fail' | grep -oE '[0-9]+' | head -1 || echo "0")
+    SKIP=$(echo "$summary" | grep -oE '^\s*[0-9]+ skip' | grep -oE '[0-9]+' | head -1 || echo "0")
     FILES=$(echo "$summary" | grep -oE 'across [0-9]+ files' | grep -oE '[0-9]+' | head -1 || echo "?")
 
     # Export for use in calling script

@@ -58,11 +58,17 @@ runs:
           target_sha="$PR_HEAD_SHA"
         fi
 
-        # Reconstruct the tree of the target commit with .attestation
-        # stripped. Operates on git objects directly so it works without the
-        # index populated.
+        # Reconstruct the tree of the target commit with the literal
+        # `.attestation` entry stripped. Operates on git objects directly
+        # so it works without the index populated.
+        #
+        # P2-#59: previously used `grep -vE '\.attestation$'`, which
+        # collapsed any file whose name *ended* with `.attestation`
+        # (e.g. `release.attestation`, `foo.attestation`). Compare the
+        # filename column exactly via awk so only the top-level
+        # `.attestation` entry is removed.
         commit_tree=$(git rev-parse "${target_sha}^{tree}")
-        current_hash=$(git ls-tree "$commit_tree" | grep -vE '\.attestation$' | git mktree)
+        current_hash=$(git ls-tree "$commit_tree" | awk -F '\t' '$2 != ".attestation"' | git mktree)
 
         echo "event:    $EVENT_NAME"
         echo "target:   $target_sha"

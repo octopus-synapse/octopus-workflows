@@ -38,6 +38,14 @@ on:
 env:
   RELEASE_CLI_VERSION: '1.7.0'
 
+# P2-#58: serialize per-repo runs so two release dispatches against
+# the same repository can't both call `gh pr create` and end up with
+# duplicate release PRs. `cancel-in-progress: false` keeps an
+# in-flight run going so a queued run waits until it's done.
+concurrency:
+  group: release-create-pr-${{ inputs.repository }}
+  cancel-in-progress: false
+
 jobs:
   create-pr:
     runs-on: ubuntu-latest

@@ -139,8 +139,14 @@ jobs:
           # Branch off main carrying the chore(release) commit. Hard-reset
           # would diverge homolog; a PR is the only safe path because of
           # branch protection on homolog.
+          #
+          # P2-#57: `--force-with-lease` instead of `--force` so two
+          # parallel release runs can't silently overwrite each other.
+          # If a sibling run pushed a different SHA to this branch after
+          # we last fetched, the lease check fails and the job errors —
+          # the operator inspects, picks one, and retries.
           git checkout -B "$BRANCH"
-          git push -u origin "$BRANCH" --force
+          git push -u origin "$BRANCH" --force-with-lease
 
           # If a PR for this tag already exists (re-run safety), skip
           # creation — the previous attempt is still open and mergeable.

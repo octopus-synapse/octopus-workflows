@@ -108,6 +108,20 @@ jobs:
         uses: typst-community/setup-typst@f5c90506c7ae74fca20e339034af05c52e0eda92 # v3
       - name: Install + migrate + seed backend
         working-directory: _backend
+        # P2-#61: the seed script may import bootstrap code that touches
+        # SendGrid / MinIO / PostHog during module init. Provide
+        # deterministic mock values for every external-service env var
+        # the bootstrap consults so a missing secret can't make the seed
+        # silently exit. The actual seed body never calls these SaaS;
+        # the variables only satisfy Zod-validated `EnvConfigSchema`.
+        env:
+          SENDGRID_API_KEY: e2e-noop
+          SENDGRID_EMAIL_FROM: e2e@example.test
+          POSTHOG_API_KEY: e2e-noop
+          MINIO_ENDPOINT: http://localhost:9000
+          MINIO_ACCESS_KEY: e2e-access
+          MINIO_SECRET_KEY: e2e-secret
+          MINIO_BUCKET: e2e-bucket
         run: |
           bun install --frozen-lockfile
           bunx prisma generate
