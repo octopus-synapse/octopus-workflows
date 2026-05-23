@@ -15,6 +15,7 @@ packages for **Octopus Synapse** repos. Consumed by `profile-services`,
     _release-create-pr.yml        release PR bot (homolog)
     _release-finalize.yml         release finalize (main)
     _release-docker.yml           Docker build + GHCR publish
+    _sync-contracts.yml           cross-repo backend→frontend contract sync (PR #3)
     publish-packages.yml          publishes packages/* on v* tags
   actions/                        composite actions
     setup-bun-env/                Bun + node_modules + optional Prisma cache
@@ -92,6 +93,44 @@ bunx octopus-attest generate --checks "typecheck,lint"
   "extends": ["@octopus-synapse/biome-config/biome.json"]
 }
 ```
+
+### Sync OpenAPI + dictionary contracts to the frontend
+
+`_sync-contracts.yml` is a reusable workflow that copies the four
+contract artefacts emitted by `profile-services` into
+`patch-careers-ui/packages/api-client/contracts/`, runs
+`pnpm sdk:generate`, and opens a PR with the regenerated SDK.
+
+The intended caller lives in `profile-services` and triggers on push
+to long-lived branches:
+
+```yaml
+# profile-services/.github/workflows/sync-contracts.yml
+name: sync-contracts
+on:
+  push:
+    branches: [main, homolog]
+    paths:
+      - "client-swagger.json"
+      - "dictionaries.json"
+      - "enums.json"
+      - "error-codes.json"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    uses: octopus-synapse/octopus-workflows/.github/workflows/_sync-contracts.yml@v1
+    with:
+      source_ref: ${{ github.sha }}
+      target_repo: octopus-synapse/patch-careers-ui
+      target_branch: homolog
+    secrets:
+      gh_cross_repo_token: ${{ secrets.GH_CROSS_REPO_TOKEN }}
+```
+
+Requires the org-level `GH_CROSS_REPO_TOKEN` secret (fine-grained PAT
+with `contents:write` + `pull-requests:write` on the target repo).
+Decision trace: D45 / D46 / D48 in `_bmad-output/v2-decisions.md`.
 
 ## Publishing
 
