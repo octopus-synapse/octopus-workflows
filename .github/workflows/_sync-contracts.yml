@@ -1,0 +1,212 @@
+name: _sync-contracts
+
+# Reusable cross-repo workflow that syncs OpenAPI + dictionary artefacts
+# from `profile-services` to `patch-careers-ui/packages/api-client` and
+# opens a PR with a regenerated SDK.
+#
+# Trigger: called from `profile-services` on push to `main` / `homolog`
+# (or manually via `workflow_dispatch`) after `bun run swagger:generate`
+# has produced the four committed artefacts:
+#
+#   client-swagger.json + dictionaries.json + enums.json + error-codes.json
+#
+# Decision trace: D45 (multi-file artefact format),
+#                 D46 (auto sync via CI), D47 (semver via release-please),
+#                 D48 (Spectral diff gate is upstream in profile-services).
+#
+# Example caller (place in `profile-services/.github/workflows/sync-contracts.yml`):
+#
+# ```yaml
+# name: sync-contracts
+# on:
+#   push:
+#     branches: [main, homolog]
+#     paths:
+#       - 'client-swagger.json'
+#       - 'dictionaries.json'
+#       - 'enums.json'
+#       - 'error-codes.json'
+#   workflow_dispatch:
+# jobs:
+#   sync:
+#     uses: octopus-synapse/octopus-workflows/.github/workflows/_sync-contracts.yml@v1
+#     with:
+#       source_ref: ${{ github.sha }}
+#       target_repo: octopus-synapse/patch-careers-ui
+#       target_branch: homolog
+#     secrets:
+#       gh_cross_repo_token: ${{ secrets.GH_CROSS_REPO_TOKEN }}
+# ```
+#
+# Required secrets:
+#   - GH_CROSS_REPO_TOKEN: fine-grained PAT with `contents:write` +
+#     `pull-requests:write` on the target repo. Provisioned org-wide;
+#     consult ops if missing.
+
+on:
+  workflow_call:
+    inputs:
+      source_ref:
+        description: >
+          Commit SHA in `octopus-synapse/profile-services` to pull the
+          contract artefacts from. Required.
+        type: string
+        required: true
+      source_repo:
+        description: >
+          Source repository. Defaults to `octopus-synapse/profile-services`.
+        type: string
+        default: octopus-synapse/profile-services
+      target_repo:
+        description: >
+          Target repository to open the sync PR against. Defaults to
+          `octopus-synapse/patch-careers-ui`.
+        type: string
+        default: octopus-synapse/patch-careers-ui
+      target_branch:
+        description: >
+          Branch in the target repo to base the sync PR on. Defaults to
+          `homolog` (D49 — V2 cutover lives on `homolog` until the big-bang).
+        type: string
+        default: homolog
+      contracts_dir:
+        description: >
+          Path inside the target repo where the four artefacts are copied.
+          Must match `kubb.config.ts` + `scripts/post-kubb.ts` consumers.
+        type: string
+        default: packages/api-client/contracts
+    secrets:
+      gh_cross_repo_token:
+        description: >
+          Fine-grained PAT with contents:write + pull-requests:write on
+          the target repo. Required.
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: sync contracts to ${{ inputs.target_repo }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source ref (contracts)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.source_repo }}
+          ref: ${{ inputs.source_ref }}
+          token: ${{ secrets.gh_cross_repo_token }}
+          path: source-repo
+          # Shallow is fine — we only need the four committed artefacts.
+          fetch-depth: 1
+
+      - name: Validate source artefacts exist
+        run: |
+          set -euo pipefail
+          for f in client-swagger.json dictionaries.json enums.json error-codes.json; do
+            if [ ! -f "source-repo/$f" ]; then
+              echo "::error::source-repo/$f missing — did \`swagger:generate\` run before push?"
+              exit 1
+            fi
+          done
+          echo "All four contract artefacts present at source ref ${{ inputs.source_ref }}."
+
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.target_repo }}
+          ref: ${{ inputs.target_branch }}
+          token: ${{ secrets.gh_cross_repo_token }}
+          path: target-repo
+          fetch-depth: 0
+
+      - name: Copy artefacts into target contracts dir
+        run: |
+          set -euo pipefail
+          mkdir -p "target-repo/${{ inputs.contracts_dir }}"
+          for f in client-swagger.json dictionaries.json enums.json error-codes.json; do
+            cp "source-repo/$f" "target-repo/${{ inputs.contracts_dir }}/$f"
+          done
+
+      - name: Detect drift
+        id: drift
+        working-directory: target-repo
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- "${{ inputs.contracts_dir }}"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No artefact drift. Nothing to PR."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat -- "${{ inputs.contracts_dir }}"
+          fi
+
+      - name: Setup pnpm
+        if: steps.drift.outputs.changed == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        if: steps.drift.outputs.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: target-repo/pnpm-lock.yaml
+
+      - name: Install (target repo)
+        if: steps.drift.outputs.changed == 'true'
+        working-directory: target-repo
+        run: pnpm install --frozen-lockfile
+
+      - name: Regenerate SDK
+        if: steps.drift.outputs.changed == 'true'
+        working-directory: target-repo
+        run: pnpm --filter @patch-careers/api-client sdk:generate
+
+      - name: Open sync PR
+        if: steps.drift.outputs.changed == 'true'
+        working-directory: target-repo
+        env:
+          GH_TOKEN: ${{ secrets.gh_cross_repo_token }}
+          SOURCE_SHA: ${{ inputs.source_ref }}
+          BASE_BRANCH: ${{ inputs.target_branch }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          CONTRACTS_DIR: ${{ inputs.contracts_dir }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${SOURCE_SHA:0:12}"
+          BRANCH="sync/contracts-${SHORT_SHA}"
+          git checkout -b "$BRANCH"
+          git add "$CONTRACTS_DIR" || true
+          # Stage anything sdk:generate touched (Kubb output isn't gitignored
+          # in the target repo if/when the first generation lands; the
+          # post-kubb dictionary outputs are committed).
+          git add -A packages/api-client
+          if git diff --cached --quiet; then
+            echo "Nothing staged after sdk:generate — bailing."
+            exit 0
+          fi
+
+          COMMIT_MSG=$(printf '%s\n\n%s\n%s\n' \
+            "chore(contracts): sync from profile-services@${SHORT_SHA}" \
+            "Regenerated SDK + dictionaries from profile-services ${SOURCE_SHA}." \
+            "Opened automatically by octopus-workflows/_sync-contracts.yml.")
+          git commit -m "$COMMIT_MSG"
+          git push -u origin "$BRANCH"
+
+          PR_BODY=$(printf '%s\n\n%s\n\n%s\n%s\n%s\n\n%s\n%s\n' \
+            "Auto-generated by \`_sync-contracts.yml\`." \
+            "Source: \`${SOURCE_REPO}@${SOURCE_SHA}\`" \
+            "Includes refreshed \`client-swagger.json\`, \`dictionaries.json\`," \
+            "\`enums.json\`, \`error-codes.json\` plus the regenerated Kubb output" \
+            "and post-kubb dictionary TS modules." \
+            "Merge once CI passes — Spectral diff on the source PR has already" \
+            "gated against breaking changes (D48).")
+
+          gh pr create \
+            --base "$BASE_BRANCH" \
+            --head "$BRANCH" \
+            --title "chore(contracts): sync from profile-services@${SHORT_SHA}" \
+            --body "$PR_BODY"
