@@ -177,7 +177,10 @@ jobs:
           fi
 
           echo "Starting ${SERVICE}..."
-          docker compose up -d "$SERVICE"
+          # --force-recreate: `docker compose up -d` compares the image by NAME,
+          # so a moved `:latest` tag (same name, new digest) is NOT rolled out
+          # without it — the deploy would silently keep the old container.
+          docker compose up -d --force-recreate "$SERVICE"
 
           echo "Waiting for ${CONTAINER} to become healthy..."
           for i in $(seq 1 45); do
