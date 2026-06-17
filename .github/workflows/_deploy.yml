@@ -1,0 +1,168 @@
+name: _deploy
+
+# Reusable deploy: SSH into the target VM and roll the compose project to a
+# given image tag. Used by consumer `cd.yml` (deploy :latest) and `rollback.yml`
+# (deploy a previous tag). Deliberately self-contained — no server-side scripts
+# on the VM beyond docker + docker compose.
+#
+# Contract notes:
+#  - ENV_VARS (optional): when provided the remote `.env` is rewritten from it.
+#    On rollback it is omitted, so the existing `.env` on the box is preserved.
+#  - image-tag: written into `.env` as IMAGE_TAG; any manual DOCKER_IMAGE pin is
+#    removed so the compose `${DOCKER_IMAGE:-ghcr.io/...:${IMAGE_TAG:-latest}}`
+#    expression resolves to the requested tag.
+#  - has-database: runs `prisma migrate deploy` (forward-only) before `up -d`.
+#    Keep it false for rollbacks — rolling the image back must not migrate.
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: 'Compose service to pull/migrate/up (e.g. backend)'
+        required: true
+        type: string
+      container-name:
+        description: 'Container name to health-check (defaults to service-name)'
+        required: false
+        type: string
+        default: ''
+      deploy-path:
+        description: 'Absolute path of the compose project on the VM'
+        required: true
+        type: string
+      image-tag:
+        description: 'GHCR image tag to deploy (default: latest)'
+        required: false
+        type: string
+        default: 'latest'
+      has-database:
+        description: 'Run `prisma migrate deploy` before starting the new version'
+        required: false
+        type: boolean
+        default: false
+      required-env-vars:
+        description: 'Comma-separated env var names that must exist in the written .env'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      OCTOPUS_SSH_PRIVATE_KEY:
+        required: true
+      OCTOPUS_VM_HOST:
+        required: true
+      OCTOPUS_VM_USER:
+        required: true
+      NODE_AUTH_TOKEN:
+        description: 'GHCR token for `docker login` (private image pulls)'
+        required: false
+      SERVICE_PORT:
+        required: false
+      ENV_VARS:
+        description: 'Multi-line .env content; when set the remote .env is rewritten'
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      # One deploy per target project at a time; never cancel a deploy midway.
+      group: deploy-${{ inputs.deploy-path }}
+      cancel-in-progress: false
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.OCTOPUS_SSH_PRIVATE_KEY }}
+          VM_HOST: ${{ secrets.OCTOPUS_VM_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Sync remote .env
+        if: ${{ inputs.deploy-path != '' }}
+        env:
+          ENV_VARS: ${{ secrets.ENV_VARS }}
+          VM_USER: ${{ secrets.OCTOPUS_VM_USER }}
+          VM_HOST: ${{ secrets.OCTOPUS_VM_HOST }}
+          DEPLOY_PATH: ${{ inputs.deploy-path }}
+        run: |
+          if [ -z "${ENV_VARS:-}" ]; then
+            echo "ENV_VARS not provided — keeping existing remote .env (rollback mode)."
+            exit 0
+          fi
+          printf '%s\n' "$ENV_VARS" | ssh -i ~/.ssh/id_deploy -o BatchMode=yes \
+            "$VM_USER@$VM_HOST" \
+            "umask 077 && mkdir -p '$DEPLOY_PATH' && cat > '$DEPLOY_PATH/.env'"
+          echo "Remote .env updated."
+
+      - name: Docker login on VM (GHCR)
+        if: ${{ secrets.NODE_AUTH_TOKEN != '' }}
+        env:
+          TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          VM_USER: ${{ secrets.OCTOPUS_VM_USER }}
+          VM_HOST: ${{ secrets.OCTOPUS_VM_HOST }}
+        run: |
+          # Token travels over stdin → docker login stdin; never on the argv.
+          printf '%s' "$TOKEN" | ssh -i ~/.ssh/id_deploy -o BatchMode=yes \
+            "$VM_USER@$VM_HOST" \
+            "docker login ghcr.io -u '$ACTOR' --password-stdin"
+
+      - name: Deploy
+        env:
+          VM_USER: ${{ secrets.OCTOPUS_VM_USER }}
+          VM_HOST: ${{ secrets.OCTOPUS_VM_HOST }}
+          DEPLOY_PATH: ${{ inputs.deploy-path }}
+          SERVICE: ${{ inputs.service-name }}
+          CONTAINER: ${{ inputs.container-name || inputs.service-name }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          HAS_DB: ${{ inputs.has-database }}
+          REQUIRED: ${{ inputs.required-env-vars }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$VM_USER@$VM_HOST" \
+            bash -s -- "$DEPLOY_PATH" "$SERVICE" "$CONTAINER" "$IMAGE_TAG" "$HAS_DB" "$REQUIRED" <<'REMOTE'
+          set -euo pipefail
+          DEPLOY_PATH="$1"; SERVICE="$2"; CONTAINER="$3"; IMAGE_TAG="$4"; HAS_DB="$5"; REQUIRED="$6"
+          cd "$DEPLOY_PATH"
+
+          # Pin the requested tag; drop any manual DOCKER_IMAGE override so the
+          # compose image expression falls back to IMAGE_TAG.
+          touch .env
+          sed -i '/^DOCKER_IMAGE=/d' .env || true
+          if grep -q '^IMAGE_TAG=' .env; then
+            sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" .env
+          else
+            echo "IMAGE_TAG=${IMAGE_TAG}" >> .env
+          fi
+
+          # Fail fast if any required env var is missing from the written .env.
+          IFS=',' read -ra VARS <<< "$REQUIRED"
+          for v in "${VARS[@]}"; do
+            [ -z "$v" ] && continue
+            grep -q "^${v}=" .env || { echo "::error::missing required env var: ${v}"; exit 1; }
+          done
+
+          echo "Pulling ${SERVICE} (tag=${IMAGE_TAG})..."
+          docker compose pull "$SERVICE"
+
+          if [ "$HAS_DB" = "true" ]; then
+            echo "Running prisma migrate deploy..."
+            docker compose run --rm "$SERVICE" bunx prisma migrate deploy --config ./prisma.config.ts
+          fi
+
+          echo "Starting ${SERVICE}..."
+          docker compose up -d "$SERVICE"
+
+          echo "Waiting for ${CONTAINER} to become healthy..."
+          for i in $(seq 1 45); do
+            st="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER" 2>/dev/null || echo missing)"
+            echo "  [$i] ${CONTAINER}: ${st}"
+            [ "$st" = "healthy" ] && { echo "Deploy OK."; exit 0; }
+            [ "$st" = "none" ] && { echo "No healthcheck on ${CONTAINER}; assuming up."; sleep 6; exit 0; }
+            sleep 4
+          done
+          echo "::error::${CONTAINER} did not become healthy in time"
+          docker logs "$CONTAINER" --tail 60 2>&1 || true
+          exit 1
+          REMOTE
