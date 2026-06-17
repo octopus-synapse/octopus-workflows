@@ -173,10 +173,12 @@ jobs:
 
           if [ "$HAS_DB" = "true" ]; then
             echo "Running prisma migrate deploy..."
-            # -T is REQUIRED: without it `docker compose run` attaches stdin and
-            # swallows the rest of this heredoc (the `up -d` + healthcheck below
-            # never run — the deploy goes green but keeps the old container).
-            docker compose run --rm -T "$SERVICE" bunx prisma migrate deploy --config ./prisma.config.ts
+            # -T AND </dev/null are BOTH required: `docker compose run` drains
+            # stdin (even with -T), and stdin here is the `bash -s <<REMOTE`
+            # heredoc — so without redirecting it the run eats the rest of the
+            # script (`up -d` + healthcheck) and the deploy goes green while
+            # silently keeping the old container.
+            docker compose run --rm -T "$SERVICE" bunx prisma migrate deploy --config ./prisma.config.ts </dev/null
           fi
 
           echo "Starting ${SERVICE}..."
