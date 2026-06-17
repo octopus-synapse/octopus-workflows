@@ -97,13 +97,17 @@ jobs:
           echo "Remote .env updated."
 
       - name: Docker login on VM (GHCR)
-        if: ${{ secrets.NODE_AUTH_TOKEN != '' }}
         env:
           TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
           ACTOR: ${{ github.actor }}
           VM_USER: ${{ secrets.OCTOPUS_VM_USER }}
           VM_HOST: ${{ secrets.OCTOPUS_VM_HOST }}
         run: |
+          # `secrets` can't be used in a step `if:`, so guard here instead.
+          if [ -z "${TOKEN:-}" ]; then
+            echo "No GHCR token provided — skipping docker login (assuming public image)."
+            exit 0
+          fi
           # Token travels over stdin → docker login stdin; never on the argv.
           printf '%s' "$TOKEN" | ssh -i ~/.ssh/id_deploy -o BatchMode=yes \
             "$VM_USER@$VM_HOST" \
