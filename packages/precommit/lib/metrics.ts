@@ -28,14 +28,37 @@ export function extractMetrics(log: string, runner: Runner = 'bun'): SuiteMetric
   }
 }
 
+/**
+ * Sum every Bun summary line ending in `word` — ` 65 pass`, or
+ * `@fuella/shared test:  65 pass` under a workspace filter.
+ *
+ * Anchored to the end of the line on purpose. `bun test` prints one line per
+ * test when stdout is not a TTY, so an unanchored /(\d+)\s+fail/ matches the
+ * *name* of a test — "retries 2 failed webhooks" — long before it reaches the
+ * summary, and reports failures on a green suite. Per-test lines end in a
+ * duration (`[0.07ms]`); summary lines end in the word itself.
+ *
+ * Summing beats taking the first match because `bun run --filter '*' test`
+ * prints one summary per workspace: `.exec` only ever saw the first one, so a
+ * two-workspace monorepo under-reported its own test count.
+ *
+ * The anchor is Bun-specific and stays here: vitest and jest put their counts
+ * mid-line ("42 passed | 1 failed"), so the same trick would break them.
+ */
+function sumBunSummaries(log: string, word: string): number {
+  const re = new RegExp(`(\\d+)\\s+${word}\\s*$`, 'gim');
+  let total = 0;
+  for (const match of log.matchAll(re)) {
+    total += Number(match[1]);
+  }
+  return total;
+}
+
 function extractBun(log: string): SuiteMetrics {
-  const pass = /(\d+)\s+pass/i.exec(log)?.[1];
-  const fail = /(\d+)\s+fail/i.exec(log)?.[1];
-  const skip = /(\d+)\s+skip/i.exec(log)?.[1];
   return {
-    passed: pass ? Number(pass) : 0,
-    failed: fail ? Number(fail) : 0,
-    skipped: skip ? Number(skip) : 0,
+    passed: sumBunSummaries(log, 'pass'),
+    failed: sumBunSummaries(log, 'fail'),
+    skipped: sumBunSummaries(log, 'skip'),
   };
 }
 

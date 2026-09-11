@@ -33,8 +33,6 @@ export interface AttestationMetrics {
 export interface AttestationRuntime {
   /** `bun --version` at the time the checks ran. */
   bun: string;
-  /** Resolved timezone — recorded for debugging, never verified. */
-  tz: string;
 }
 
 export interface Attestation {
@@ -73,10 +71,12 @@ function treeHashOf(ref: string): string {
 }
 
 function detectRuntime(): AttestationRuntime {
-  return {
-    bun: shSilent('bun --version') || 'unknown',
-    tz: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown',
-  };
+  // Only what we can honestly claim about the run. A timezone lived here
+  // briefly, but it read the hook's own environment — a check is free to run
+  // under a different one (`env -i TZ=UTC bun test`), so the field described
+  // the wrong process. Nothing verified it, and a wrong field in an evidence
+  // file is worse than a missing one.
+  return { bun: shSilent('bun --version') || 'unknown' };
 }
 
 /**
