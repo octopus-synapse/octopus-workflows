@@ -190,6 +190,31 @@ function formatTable(results: CheckResult[]): string {
   return lines.join('\n');
 }
 
+/**
+ * Emit `.attestation-metrics.json` for `octopus-attest generate`.
+ *
+ * Both phases are recorded: the attestation claims serial checks (swagger
+ * generation, prisma generate, a frozen install) alongside the parallel ones,
+ * and generation refuses to claim anything with no passing metric behind it.
+ */
+function writeMetrics(results: CheckResult[]): void {
+  const metrics: Record<string, unknown> = {};
+  for (const r of results) {
+    metrics[r.name] = {
+      status: r.ok ? 'ok' : 'fail',
+      time_ms: r.durationMs,
+      ...(r.metrics.passed + r.metrics.failed + r.metrics.skipped > 0
+        ? {
+            passed: r.metrics.passed,
+            failed: r.metrics.failed,
+            skipped: r.metrics.skipped,
+          }
+        : {}),
+    };
+  }
+  writeFileSync('.attestation-metrics.json', JSON.stringify(metrics, null, 2));
+}
+
 async function main(): Promise<void> {
   const { config: configPath } = parseArgs(process.argv.slice(2));
   if (!existsSync(configPath)) {
@@ -200,8 +225,9 @@ async function main(): Promise<void> {
   const config = loadConfig(configPath);
 
   // Serial phase — short-circuit on failure (e.g., swagger gen).
+  let serialResults: CheckResult[] = [];
   if (config.serial && config.serial.length > 0) {
-    const serialResults = await runSerial(config.serial);
+    serialResults = await runSerial(config.serial);
     if (serialResults.some((r) => !r.ok)) {
       console.error('\nPre-commit failed (serial stage).');
       process.exit(1);
@@ -210,6 +236,7 @@ async function main(): Promise<void> {
 
   if (config.checks.length === 0) {
     console.log('[run-parallel] no parallel checks configured.');
+    writeMetrics(serialResults);
     process.exit(0);
   }
 
@@ -229,22 +256,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Emit metrics file for attest generate.
-  const metrics: Record<string, unknown> = {};
-  for (const r of results) {
-    metrics[r.name] = {
-      status: 'ok',
-      time_ms: r.durationMs,
-      ...(r.metrics.passed + r.metrics.failed + r.metrics.skipped > 0
-        ? {
-            passed: r.metrics.passed,
-            failed: r.metrics.failed,
-            skipped: r.metrics.skipped,
-          }
-        : {}),
-    };
-  }
-  writeFileSync('.attestation-metrics.json', JSON.stringify(metrics, null, 2));
+  writeMetrics([...serialResults, ...results]);
 
   console.log('\nPre-commit passed.');
   process.exit(0);

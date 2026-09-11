@@ -1,9 +1,13 @@
 name: 'Verify Pre-Commit Attestation'
 description: |
   Verifies that .attestation.tree_hash matches the current commit's tree
-  (with .attestation stripped). Pure bash composite action using the git
-  and jq binaries pre-installed on GitHub-hosted runners — no Docker, no
-  Node/npm, no package auth. Typical runtime: ~2s.
+  (with .attestation stripped), and optionally that the attestation covers a
+  required set of passing checks under a pinned runtime. Pure bash composite
+  action using the git and jq binaries pre-installed on GitHub-hosted runners
+  — no Docker, no Node/npm, no package auth. Typical runtime: ~2s.
+
+  The require-* inputs default to off, so a repo on the older v3 attestation
+  format keeps verifying exactly as before.
 inputs:
   strict:
     description: 'Fail when no attestation file exists (default: true).'
@@ -13,6 +17,26 @@ inputs:
     description: 'Warn if the attestation is older than N hours (default: 72).'
     required: false
     default: '72'
+  require-checks:
+    description: |
+      Comma-separated checks the attestation must claim (e.g. "lint,typecheck,unit").
+      Empty (the default) accepts any claim. Without this, an attestation
+      generated with --checks "lint" verifies exactly like a full one.
+    required: false
+    default: ''
+  require-passing:
+    description: |
+      Fail when any recorded metric is not status=ok or reports failing tests.
+      Requires an attestation that carries metrics (default: false).
+    required: false
+    default: 'false'
+  require-runtime:
+    description: |
+      Fail unless the attestation records the bun version the checks ran under
+      and it matches .bun-version in the attested tree. Needs attestation
+      format v4 or newer (default: false).
+    required: false
+    default: 'false'
 runs:
   using: 'composite'
   steps:
@@ -21,6 +45,9 @@ runs:
       env:
         STRICT: ${{ inputs.strict }}
         MAX_AGE_HOURS: ${{ inputs.max-age-hours }}
+        REQUIRE_CHECKS: ${{ inputs.require-checks }}
+        REQUIRE_PASSING: ${{ inputs.require-passing }}
+        REQUIRE_RUNTIME: ${{ inputs.require-runtime }}
         # On pull_request events, GitHub checks out a synthesized merge
         # commit (PR base + head). The merge tree differs from the head
         # tree, so HEAD^{tree} would never match an attestation generated
@@ -30,21 +57,6 @@ runs:
         EVENT_NAME: ${{ github.event_name }}
       run: |
         set -euo pipefail
-
-        if [ ! -f .attestation ]; then
-          if [ "$STRICT" = "true" ]; then
-            echo "::error::No .attestation file. Commit may have bypassed pre-commit hooks."
-            exit 1
-          fi
-          echo "::warning::No .attestation file; continuing because strict=false."
-          exit 0
-        fi
-
-        attested_hash=$(jq -r '.tree_hash' .attestation)
-        if [ -z "$attested_hash" ] || [ "$attested_hash" = "null" ]; then
-          echo "::error::Invalid attestation format — missing tree_hash field."
-          exit 1
-        fi
 
         # Pick the SHA whose tree the attestation actually claims to cover.
         # On pull_request events that's the PR head, not GitHub's merge
@@ -56,6 +68,28 @@ runs:
           # a no-op when the object is already cached.
           git fetch --no-tags --depth=1 origin "$PR_HEAD_SHA" 2>/dev/null || true
           target_sha="$PR_HEAD_SHA"
+        fi
+
+        # Read the attestation out of the attested tree rather than the working
+        # directory: on a pull_request run the checkout holds the merge ref, so
+        # the file on disk is not necessarily the one the PR head committed.
+        attestation=$(git show "${target_sha}:.attestation" 2>/dev/null || true)
+
+        if [ -z "$attestation" ]; then
+          if [ "$STRICT" = "true" ]; then
+            echo "::error::No .attestation file. Commit may have bypassed pre-commit hooks."
+            exit 1
+          fi
+          echo "::warning::No .attestation file; continuing because strict=false."
+          exit 0
+        fi
+
+        jq_att() { printf '%s' "$attestation" | jq -r "$1"; }
+
+        attested_hash=$(jq_att '.tree_hash // empty')
+        if [ -z "$attested_hash" ]; then
+          echo "::error::Invalid attestation format — missing tree_hash field."
+          exit 1
         fi
 
         # Reconstruct the tree of the target commit with the literal
@@ -80,8 +114,59 @@ runs:
           exit 1
         fi
 
+        # --- Policy, all opt-in -------------------------------------------
+
+        if [ -n "$REQUIRE_CHECKS" ]; then
+          claimed=" $(jq_att '.checks // empty') "
+          missing=""
+          for required in ${REQUIRE_CHECKS//,/ }; do
+            case "$claimed" in
+              *" $required "*) ;;
+              *) missing="$missing $required" ;;
+            esac
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Attestation does not cover required checks:${missing} (claims:${claimed})"
+            exit 1
+          fi
+          echo "checks:   ${claimed# }"
+        fi
+
+        if [ "$REQUIRE_PASSING" = "true" ]; then
+          recorded=$(jq_att '.metrics // {} | length')
+          if [ "$recorded" = "0" ]; then
+            echo "::error::Attestation records no metrics, so no check can be shown to have passed."
+            exit 1
+          fi
+          failures=$(jq_att '.metrics // {} | to_entries[] | select(.value.status != "ok" or ((.value.failed // 0) > 0)) | .key' | tr '\n' ' ')
+          if [ -n "${failures// /}" ]; then
+            echo "::error::Attestation records failing checks: ${failures}"
+            exit 1
+          fi
+          echo "metrics:  $recorded checks recorded, all passing"
+        fi
+
+        if [ "$REQUIRE_RUNTIME" = "true" ]; then
+          attested_bun=$(jq_att '.runtime.bun // empty')
+          if [ -z "$attested_bun" ]; then
+            echo "::error::Attestation has no runtime block (format v$(jq_att '.version // "?"')); regenerate it with a client that records one."
+            exit 1
+          fi
+          # Read the pin from the attested tree for the same reason as above.
+          pinned=$(git show "${target_sha}:.bun-version" 2>/dev/null | tr -d '[:space:]' || true)
+          if [ -z "$pinned" ]; then
+            echo "::error::No .bun-version in the attested tree, so the recorded runtime cannot be checked."
+            exit 1
+          fi
+          if [ "$pinned" != "$attested_bun" ]; then
+            echo "::error::Runtime mismatch — checks ran on bun ${attested_bun}, but .bun-version pins ${pinned}."
+            exit 1
+          fi
+          echo "runtime:  bun $attested_bun"
+        fi
+
         # Age warning (non-fatal).
-        timestamp=$(jq -r '.timestamp // empty' .attestation)
+        timestamp=$(jq_att '.timestamp // empty')
         if [ -n "$timestamp" ]; then
           attested_epoch=$(date -d "$timestamp" +%s 2>/dev/null || echo 0)
           now_epoch=$(date +%s)
